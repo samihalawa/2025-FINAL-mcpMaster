@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import AutonomousSettings from "@/components/settings/autonomous-settings";
 
 export default function SettingsPage() {
   return (
@@ -173,6 +174,9 @@ export default function SettingsPage() {
           </TabsContent>
           
           <TabsContent value="advanced">
+            {/* Autonomous Settings Component */}
+            <AutonomousSettings />
+            
             <Card>
               <CardHeader>
                 <CardTitle>Advanced Settings</CardTitle>

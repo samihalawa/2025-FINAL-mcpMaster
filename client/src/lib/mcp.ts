@@ -27,16 +27,31 @@ export function setupWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws`;
   
+  // Close existing connection if present
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.close();
+  }
+  
   ws = new WebSocket(wsUrl);
   
   ws.onopen = () => {
     console.log('WebSocket connection established');
+    
+    // Send a ping to verify connection
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ command: 'ping', timestamp: new Date().toISOString() }));
+    }
   };
   
   ws.onmessage = (event) => {
     try {
       const message: WebSocketMessage = JSON.parse(event.data);
       handleWebSocketMessage(message);
+      
+      // Log connection confirmation
+      if (message.type === 'connection_established') {
+        console.log('Server confirmed WebSocket connection at:', message.data.timestamp);
+      }
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
     }
@@ -87,11 +102,119 @@ function handleWebSocketMessage(message: WebSocketMessage) {
 
 // Server API functions
 export async function syncAllServers() {
-  return apiRequest('POST', '/api/sync');
+  // Try WebSocket if available, fall back to HTTP API
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    return new Promise((resolve, reject) => {
+      // Create a unique ID for this request
+      const requestId = `sync_${Date.now()}`;
+      
+      // Set up a one-time message handler to catch the response
+      const messageHandler = (event: MessageEvent) => {
+        try {
+          const response = JSON.parse(event.data);
+          
+          if (response.type === 'sync_completed') {
+            // Remove the message listener to avoid memory leaks
+            ws?.removeEventListener('message', messageHandler);
+            resolve(response.data);
+          } else if (response.type === 'error' && response.data.command === 'sync_servers') {
+            // Remove the message listener to avoid memory leaks
+            ws?.removeEventListener('message', messageHandler);
+            reject(new Error(response.data.message));
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket response:', error);
+        }
+      };
+      
+      // Add the temporary message handler
+      if (ws) {
+        ws.addEventListener('message', messageHandler);
+        
+        // Send the command
+        ws.send(JSON.stringify({
+          command: 'sync_servers',
+          requestId
+        }));
+      }
+      
+      // Set a timeout to clean up the handler and reject the promise if no response
+      setTimeout(() => {
+        ws?.removeEventListener('message', messageHandler);
+        reject(new Error('WebSocket sync operation timed out'));
+      }, 10000);
+    });
+  } else {
+    // Fall back to HTTP API
+    return apiRequest('POST', '/api/sync');
+  }
 }
 
 export async function toggleWorkerMode(serverId: number) {
-  return apiRequest('POST', `/api/servers/${serverId}/toggle-worker`);
+  // Try WebSocket if available, fall back to HTTP API
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    return new Promise((resolve, reject) => {
+      // Create a unique ID for this request
+      const requestId = `toggle_worker_${Date.now()}`;
+      
+      // Set up a one-time message handler to catch the response
+      const messageHandler = (event: MessageEvent) => {
+        try {
+          const response = JSON.parse(event.data);
+          
+          if (response.type === 'server_updated' && response.data.id === serverId) {
+            // Remove the message listener to avoid memory leaks
+            ws?.removeEventListener('message', messageHandler);
+            resolve(response.data);
+          } else if (response.type === 'error' && response.data.command === 'toggle_worker') {
+            // Remove the message listener to avoid memory leaks
+            ws?.removeEventListener('message', messageHandler);
+            reject(new Error(response.data.message));
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket response:', error);
+        }
+      };
+      
+      // Add the temporary message handler
+      if (ws) {
+        ws.addEventListener('message', messageHandler);
+        
+        // Send the command
+        ws.send(JSON.stringify({
+          command: 'toggle_worker',
+          serverId,
+          requestId
+        }));
+      }
+      
+      // Set a timeout to clean up the handler and reject the promise if no response
+      setTimeout(() => {
+        ws?.removeEventListener('message', messageHandler);
+        reject(new Error('WebSocket toggle worker operation timed out'));
+      }, 10000);
+    });
+  } else {
+    // Fall back to HTTP API
+    return apiRequest('POST', `/api/servers/${serverId}/toggle-worker`);
+  }
+}
+
+// Headless API operations
+export async function performHeadlessOperation(action: string, id?: number, params?: any) {
+  const queryParams = new URLSearchParams();
+  queryParams.append('action', action);
+  
+  if (id !== undefined) {
+    queryParams.append('id', id.toString());
+  }
+  
+  if (params) {
+    queryParams.append('params', JSON.stringify(params));
+  }
+  
+  const url = `/api/headless/operation?${queryParams.toString()}`;
+  return apiRequest('GET', url);
 }
 
 // Format functions

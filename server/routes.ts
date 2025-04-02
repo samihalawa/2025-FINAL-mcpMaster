@@ -7,30 +7,37 @@ import { fromZodError } from "zod-validation-error";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 
+// Import WebSocket from ws (needed to access OPEN status)
+import { WebSocket as WSType } from "ws";
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
   // Setup a specific WebSocket endpoint to avoid conflicts with Vite
-  const wss = new WebSocketServer({ noServer: true });
-  
-  // Handle WebSocket upgrade requests
-  httpServer.on('upgrade', (request, socket, head) => {
-    if (request.url === '/ws') {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request);
-      });
-    }
-  });
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   
   wss.on('connection', (ws: WebSocket) => {
     console.log('WebSocket client connected');
+    
+    // Send initial connection confirmation
+    ws.send(JSON.stringify({
+      type: 'connection_established',
+      data: { timestamp: new Date().toISOString() }
+    }));
     
     ws.on('message', (message: Buffer | string) => {
       try {
         const data = JSON.parse(message.toString());
         console.log('Received message:', data);
+        
+        // Handle commands sent through WebSocket
+        handleWebSocketCommand(data, ws);
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
+        ws.send(JSON.stringify({
+          type: 'error',
+          data: { message: 'Invalid message format' }
+        }));
       }
     });
     
@@ -42,10 +49,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Broadcast updates to all connected clients
   const broadcastUpdate = (type: string, data: any) => {
     wss.clients.forEach((client: WebSocket) => {
-      if (client.readyState === client.OPEN) {
+      if (client.readyState === WSType.OPEN) {
         client.send(JSON.stringify({ type, data }));
       }
     });
+  };
+  
+  // Handle WebSocket commands (headless API operations)
+  const handleWebSocketCommand = async (data: any, ws: WebSocket) => {
+    try {
+      if (!data.command) {
+        throw new Error('No command specified');
+      }
+      
+      switch (data.command) {
+        case 'sync_servers':
+          const servers = await storage.getServers();
+          
+          // Create activity for sync operation
+          const activity = await storage.createActivity({
+            type: "info",
+            message: "Configuration synchronized through WebSocket",
+            serverId: null,
+            appId: null
+          });
+          
+          ws.send(JSON.stringify({
+            type: 'sync_completed',
+            data: { 
+              timestamp: new Date().toISOString(),
+              servers: servers.length
+            }
+          }));
+          
+          // Also broadcast to all clients
+          broadcastUpdate('sync_completed', { 
+            timestamp: new Date().toISOString(),
+            servers: servers.length
+          });
+          break;
+          
+        case 'toggle_worker':
+          if (!data.serverId) {
+            throw new Error('Server ID is required');
+          }
+          
+          const server = await storage.getServer(Number(data.serverId));
+          if (!server) {
+            throw new Error('Server not found');
+          }
+          
+          const updatedServer = await storage.updateServer(Number(data.serverId), {
+            isWorker: !server.isWorker
+          });
+          
+          ws.send(JSON.stringify({
+            type: 'server_updated',
+            data: updatedServer
+          }));
+          
+          // Also broadcast to all clients
+          broadcastUpdate('server_updated', updatedServer);
+          break;
+          
+        default:
+          throw new Error(`Unknown command: ${data.command}`);
+      }
+    } catch (error) {
+      console.error('Error handling WebSocket command:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        data: { 
+          message: error instanceof Error ? error.message : 'Unknown error',
+          command: data.command
+        }
+      }));
+    }
   };
 
   // API Routes
@@ -348,6 +427,177 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error fetching stats:', error);
       res.status(500).json({ message: 'Failed to fetch statistics' });
     }
+  });
+
+  // URL Parameter-based API for headless operations
+  // This allows direct operations via URL parameters (for testing with curl)
+  app.get('/api/headless/operation', async (req: Request, res: Response) => {
+    try {
+      const { action, id, params } = req.query;
+      
+      if (!action) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Action parameter is required'
+        });
+      }
+      
+      // Parse parameters if provided as JSON string
+      let parameters = {};
+      if (params && typeof params === 'string') {
+        try {
+          parameters = JSON.parse(params);
+        } catch (e) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid JSON in params parameter'
+          });
+        }
+      }
+      
+      // Handle different operations based on action parameter
+      switch (action) {
+        case 'get_stats':
+          try {
+            const servers = await storage.getServers();
+            const apps = await storage.getApps();
+            
+            const totalServers = servers.length;
+            const activeServers = servers.filter(s => s.status === 'active').length;
+            const warningServers = servers.filter(s => s.status === 'warning').length;
+            const connectedApps = apps.filter(a => a.status === 'active').length;
+            
+            return res.json({
+              success: true,
+              data: {
+                totalServers,
+                activeServers,
+                warningServers,
+                connectedApps
+              }
+            });
+          } catch (error) {
+            console.error('Error fetching stats:', error);
+            return res.status(500).json({ 
+              success: false, 
+              message: 'Failed to fetch statistics' 
+            });
+          }
+          
+        case 'get_server':
+          if (!id) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'ID parameter is required for get_server action'
+            });
+          }
+          
+          const server = await storage.getServer(Number(id));
+          if (!server) {
+            return res.status(404).json({ 
+              success: false, 
+              message: 'Server not found'
+            });
+          }
+          
+          return res.json({
+            success: true,
+            data: server
+          });
+          
+        case 'get_app':
+          if (!id) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'ID parameter is required for get_app action'
+            });
+          }
+          
+          const app = await storage.getApp(Number(id));
+          if (!app) {
+            return res.status(404).json({ 
+              success: false, 
+              message: 'App not found'
+            });
+          }
+          
+          return res.json({
+            success: true,
+            data: app
+          });
+          
+        case 'sync_all':
+          const servers = await storage.getServers();
+          
+          // Create activity for sync operation
+          await storage.createActivity({
+            type: "info",
+            message: "Configuration synchronized via headless API",
+            serverId: null,
+            appId: null
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('sync_completed', { timestamp: new Date() });
+          
+          return res.json({
+            success: true,
+            message: 'Sync completed',
+            servers: servers.length
+          });
+          
+        case 'toggle_worker':
+          if (!id) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'ID parameter is required for toggle_worker action'
+            });
+          }
+          
+          const targetServer = await storage.getServer(Number(id));
+          if (!targetServer) {
+            return res.status(404).json({ 
+              success: false, 
+              message: 'Server not found'
+            });
+          }
+          
+          const updatedServer = await storage.updateServer(Number(id), {
+            isWorker: !targetServer.isWorker
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('server_updated', updatedServer);
+          
+          return res.json({
+            success: true,
+            message: `Worker mode ${updatedServer?.isWorker ? 'enabled' : 'disabled'}`,
+            data: updatedServer
+          });
+          
+        default:
+          return res.status(400).json({ 
+            success: false, 
+            message: `Unknown action: ${action}`
+          });
+      }
+    } catch (error) {
+      console.error('Error in headless operation:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Internal server error',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Health check endpoint for monitoring
+  app.get('/api/health', (req: Request, res: Response) => {
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
   });
 
   return httpServer;
