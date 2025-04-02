@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertServerSchema, insertAppSchema, insertActivitySchema, insertToolSchema } from "@shared/schema";
@@ -7,9 +7,45 @@ import { fromZodError } from "zod-validation-error";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { z } from "zod";
+import fetch from "node-fetch";
 
 // Import WebSocket from ws (needed to access OPEN status)
 import { WebSocket as WSType } from "ws";
+
+// Known MCP server repositories for auto-discovery
+const KNOWN_REPOS = [
+  { owner: 'dcSpark', repo: 'mcp-dockmaster' },
+  { owner: 'Toolbase-AI', repo: 'toolbase' },
+  // Add more repositories here as they become available
+];
+
+// GitHub API URL
+const GITHUB_API_URL = 'https://api.github.com';
+
+/**
+ * Interface for GitHub repository data
+ */
+interface GitHubRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  description: string;
+  html_url: string;
+  stargazers_count: number;
+  forks_count: number;
+  owner: {
+    login: string;
+    avatar_url: string;
+  };
+  default_branch: string;
+  license?: {
+    key: string;
+    name: string;
+  };
+  topics?: string[];
+  created_at: string;
+  updated_at: string;
+}
 
 // Registry data structure to handle MCP tool registry
 interface RegistryTool {
@@ -370,6 +406,46 @@ function getTrendingTools(limit: number = 5): RegistryTool[] {
     .slice(0, limit);
 }
 
+/**
+ * Fetch repository information from GitHub
+ * @param owner Repository owner/organization
+ * @param repo Repository name
+ * @returns Repository information
+ */
+async function fetchGitHubRepository(owner: string, repo: string): Promise<GitHubRepo> {
+  try {
+    const response = await fetch(`${GITHUB_API_URL}/repos/${owner}/${repo}`);
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data as GitHubRepo;
+  } catch (error) {
+    console.error(`Failed to fetch GitHub repository ${owner}/${repo}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get server version information from repository
+ * @param owner Repository owner
+ * @param repo Repository name
+ * @returns Latest version or 'latest' if not found
+ */
+async function getServerVersion(owner: string, repo: string): Promise<string> {
+  try {
+    const response = await fetch(`${GITHUB_API_URL}/repos/${owner}/${repo}/releases/latest`);
+    if (!response.ok) {
+      return 'latest'; // Default if no releases found
+    }
+    const data = await response.json() as { tag_name?: string };
+    return data.tag_name || 'latest';
+  } catch (error) {
+    console.error(`Failed to fetch release info for ${owner}/${repo}:`, error);
+    return 'latest';
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
@@ -550,6 +626,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
             connectedApps: apps.filter(a => a.status === 'active').length,
             activeTools: tools.filter(t => t.active).length
           };
+          break;
+          
+        case 'discoverServers':
+          // Discover MCP servers from known GitHub repositories
+          const createdServers = [];
+          
+          for (const repo of KNOWN_REPOS) {
+            try {
+              // Check if we already have this server in our database
+              const existingServers = await storage.getServers();
+              const exists = existingServers.some(s => 
+                s.repository === `${repo.owner}/${repo.repo}` || 
+                s.name.includes(repo.repo)
+              );
+              
+              if (exists) {
+                console.log(`Server for repository ${repo.owner}/${repo.repo} already exists, skipping...`);
+                continue;
+              }
+              
+              // Fetch repository information
+              const repoData = await fetchGitHubRepository(repo.owner, repo.repo);
+              const version = await getServerVersion(repo.owner, repo.repo);
+              
+              // Default MCP port
+              const port = 50050;
+              
+              // Create server entry
+              const serverData = {
+                name: `${repoData.name} MCP Server`,
+                type: 'github',
+                address: repoData.html_url,
+                port,
+                status: 'inactive',
+                models: ['Claude-3-Opus', 'Claude-3-Sonnet', 'GPT-4'], // Default supported models
+                repository: repoData.full_name,
+                version,
+                description: repoData.description || `MCP Server from ${repoData.full_name}`,
+                stars: repoData.stargazers_count,
+                forks: repoData.forks_count,
+                owner: repoData.owner.login,
+                isWorker: false,
+              };
+              
+              // Add to database
+              const createdServer = await storage.createServer(serverData);
+              createdServers.push(createdServer);
+              
+              // Create activity log
+              await storage.createActivity({
+                type: "info",
+                message: `Discovered MCP server from GitHub via RPC: ${repoData.full_name}`,
+                serverId: createdServer.id,
+                appId: null
+              });
+              
+              // Broadcast update to all clients
+              broadcastUpdate('server_discovered', createdServer);
+              
+            } catch (error) {
+              console.error(`Error discovering server from ${repo.owner}/${repo.repo}:`, error);
+              // Continue with other repositories even if one fails
+            }
+          }
+          
+          // Return all servers, including previously existing ones
+          const allServers = await storage.getServers();
+          result = allServers;
           break;
           
         default:
@@ -830,6 +974,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
           broadcastUpdate('registry_synced', syncResults);
           break;
           
+        case 'discover_servers':
+          // Discover MCP servers from known GitHub repositories
+          const discoveredServers = [];
+          
+          for (const repo of KNOWN_REPOS) {
+            try {
+              // Check if we already have this server in our database
+              const existingServers = await storage.getServers();
+              const exists = existingServers.some(s => 
+                s.repository === `${repo.owner}/${repo.repo}` || 
+                s.name.includes(repo.repo)
+              );
+              
+              if (exists) {
+                console.log(`Server for repository ${repo.owner}/${repo.repo} already exists, skipping...`);
+                continue;
+              }
+              
+              // Fetch repository information
+              const repoData = await fetchGitHubRepository(repo.owner, repo.repo);
+              const version = await getServerVersion(repo.owner, repo.repo);
+              
+              // Default MCP port
+              const port = 50050;
+              
+              // Create server entry
+              const serverData = {
+                name: `${repoData.name} MCP Server`,
+                type: 'github',
+                address: repoData.html_url,
+                port,
+                status: 'inactive',
+                models: ['Claude-3-Opus', 'Claude-3-Sonnet', 'GPT-4'], // Default supported models
+                repository: repoData.full_name,
+                version,
+                description: repoData.description || `MCP Server from ${repoData.full_name}`,
+                stars: repoData.stargazers_count,
+                forks: repoData.forks_count,
+                owner: repoData.owner.login,
+                isWorker: false,
+              };
+              
+              // Add to database
+              const createdServer = await storage.createServer(serverData);
+              discoveredServers.push(createdServer);
+              
+              // Create activity log
+              await storage.createActivity({
+                type: "info",
+                message: `Discovered MCP server from GitHub via WebSocket: ${repoData.full_name}`,
+                serverId: createdServer.id,
+                appId: null
+              });
+              
+              // Broadcast update to all clients
+              broadcastUpdate('server_discovered', createdServer);
+            } catch (error) {
+              console.error(`Error discovering server from ${repo.owner}/${repo.repo}:`, error);
+              // Continue with other repositories even if one fails
+            }
+          }
+          
+          // Return all servers, including previously existing ones
+          const discoveredAllServers = await storage.getServers();
+          
+          ws.send(JSON.stringify({
+            type: 'servers_discovered',
+            data: {
+              timestamp: new Date().toISOString(),
+              discovered: discoveredServers.length,
+              total: discoveredAllServers.length,
+              servers: discoveredAllServers
+            }
+          }));
+          break;
+          
         default:
           throw new Error(`Unknown command: ${data.command}`);
       }
@@ -939,6 +1159,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error deleting server:', error);
       res.status(500).json({ message: 'Failed to delete server' });
+    }
+  });
+  
+  // Server discovery from GitHub repositories
+  app.post('/api/servers/discover', async (req: Request, res: Response) => {
+    try {
+      const createdServers = [];
+      
+      // Go through all known repositories
+      for (const repo of KNOWN_REPOS) {
+        try {
+          // Check if we already have this server in our database
+          const existingServers = await storage.getServers();
+          const exists = existingServers.some(s => 
+            s.repository === `${repo.owner}/${repo.repo}` || 
+            s.name.includes(repo.repo)
+          );
+          
+          if (exists) {
+            console.log(`Server for repository ${repo.owner}/${repo.repo} already exists, skipping...`);
+            continue;
+          }
+          
+          // Fetch repository information
+          const repoData = await fetchGitHubRepository(repo.owner, repo.repo);
+          const version = await getServerVersion(repo.owner, repo.repo);
+          
+          // Default MCP port
+          const port = 50050;
+          
+          // Create server entry
+          const serverData = {
+            name: `${repoData.name} MCP Server`,
+            type: 'github',
+            address: repoData.html_url,
+            port,
+            status: 'inactive',
+            models: ['Claude-3-Opus', 'Claude-3-Sonnet', 'GPT-4'], // Default supported models
+            repository: repoData.full_name,
+            version,
+            description: repoData.description || `MCP Server from ${repoData.full_name}`,
+            stars: repoData.stargazers_count,
+            forks: repoData.forks_count,
+            owner: repoData.owner.login,
+            isWorker: false,
+          };
+          
+          // Add to database
+          const createdServer = await storage.createServer(serverData);
+          createdServers.push(createdServer);
+          
+          // Create activity log
+          await storage.createActivity({
+            type: "info",
+            message: `Discovered MCP server from GitHub: ${repoData.full_name}`,
+            serverId: createdServer.id,
+            appId: null
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('server_discovered', createdServer);
+          
+        } catch (error) {
+          console.error(`Error discovering server from ${repo.owner}/${repo.repo}:`, error);
+          // Continue with other repositories even if one fails
+        }
+      }
+      
+      // Return all servers, including previously existing ones
+      const allServers = await storage.getServers();
+      res.json(allServers);
+      
+    } catch (error) {
+      console.error('Error discovering servers:', error);
+      res.status(500).json({ message: 'Failed to discover servers' });
     }
   });
   

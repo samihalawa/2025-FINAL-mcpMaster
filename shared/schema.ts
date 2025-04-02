@@ -21,7 +21,7 @@ export type User = typeof users.$inferSelect;
 export const servers = pgTable("servers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  type: text("type").notNull(), // local, remote, docker, cloud
+  type: text("type").notNull(), // local, remote, docker, cloud, github
   address: text("address").notNull(),
   port: integer("port").notNull(),
   status: text("status").notNull().default("inactive"), // active, inactive, warning, error
@@ -32,6 +32,13 @@ export const servers = pgTable("servers", {
   createdAt: timestamp("created_at").defaultNow(),
   lastActive: timestamp("last_active").defaultNow(),
   isWorker: boolean("is_worker").default(false),
+  // Additional fields for GitHub integration
+  repository: text("repository").default(""),
+  version: text("version").default(""),
+  description: text("description").default(""),
+  stars: integer("stars").default(0),
+  forks: integer("forks").default(0),
+  owner: text("owner").default(""),
 });
 
 export const insertServerSchema = createInsertSchema(servers)
@@ -41,6 +48,12 @@ export const insertServerSchema = createInsertSchema(servers)
     cpuUsage: z.coerce.number().min(0).max(100).optional(),
     memoryUsage: z.coerce.number().min(0).optional(),
     totalMemory: z.coerce.number().min(1).optional(),
+    repository: z.string().optional(),
+    version: z.string().optional(),
+    description: z.string().optional(),
+    stars: z.number().optional(),
+    forks: z.number().optional(),
+    owner: z.string().optional(),
   });
 
 export type InsertServer = z.infer<typeof insertServerSchema>;
