@@ -6,9 +6,369 @@ import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
+import { z } from "zod";
 
 // Import WebSocket from ws (needed to access OPEN status)
 import { WebSocket as WSType } from "ws";
+
+// Registry data structure to handle MCP tool registry
+interface RegistryTool {
+  id: string;
+  name: string;
+  description: string;
+  shortDescription: string;
+  publisher: {
+    id: string;
+    name: string;
+    url: string;
+  };
+  isOfficial: boolean;
+  sourceUrl: string;
+  categories: string[];
+  tags: string[];
+  stars?: number;
+  downloads?: number;
+  lastUpdated?: string;
+  compatibleWith?: string[];
+}
+
+interface RegistryCategory {
+  id: string;
+  name: string;
+  description: string;
+  count: number;
+  featured: boolean;
+}
+
+// Mock registry data (in a real app, this would come from external APIs/databases)
+const registryCategories: RegistryCategory[] = [
+  {
+    id: "language-models",
+    name: "Language Models",
+    description: "Tools for working with large language models and text generation",
+    count: 158,
+    featured: true
+  },
+  {
+    id: "image-generation",
+    name: "Image Generation",
+    description: "Tools for creating and manipulating images with AI",
+    count: 97,
+    featured: true
+  },
+  {
+    id: "audio",
+    name: "Audio Processing",
+    description: "Tools for speech recognition, text-to-speech, and audio analysis",
+    count: 64,
+    featured: false
+  },
+  {
+    id: "data-analysis",
+    name: "Data Analysis",
+    description: "Tools for analyzing and visualizing data",
+    count: 112,
+    featured: true
+  },
+  {
+    id: "agents",
+    name: "AI Agents",
+    description: "Autonomous AI agents and assistants",
+    count: 76,
+    featured: true
+  },
+  {
+    id: "utilities",
+    name: "Utilities",
+    description: "Helper tools for MCP servers",
+    count: 189,
+    featured: false
+  },
+  {
+    id: "connectors",
+    name: "API Connectors",
+    description: "Tools to connect to external APIs and services",
+    count: 205,
+    featured: true
+  }
+];
+
+// Registry tools database (would be fetched from external sources in production)
+const registryTools: RegistryTool[] = [
+  {
+    id: "mcp-openai-proxy",
+    name: "OpenAI API Proxy",
+    description: "Proxy OpenAI API calls through MCP with additional features like caching, retries, and rate limiting",
+    shortDescription: "Proxy for OpenAI API with advanced features",
+    publisher: {
+      id: "mcp-official",
+      name: "MCP Official",
+      url: "https://github.com/mcp-project/mcp-tools"
+    },
+    isOfficial: true,
+    sourceUrl: "https://github.com/mcp-project/mcp-tools/openai-proxy",
+    categories: ["connectors", "language-models"],
+    tags: ["openai", "proxy", "api", "gpt"],
+    stars: 847,
+    downloads: 28945,
+    lastUpdated: "2025-03-15T14:22:45Z",
+    compatibleWith: ["local", "docker", "cloud"]
+  },
+  {
+    id: "mcp-anthropic-connector",
+    name: "Anthropic Claude Connector",
+    description: "Connect to Anthropic's Claude models through a standardized MCP interface with support for all Claude models and streaming",
+    shortDescription: "Claude API connector with streaming support",
+    publisher: {
+      id: "mcp-official",
+      name: "MCP Official",
+      url: "https://github.com/mcp-project/mcp-tools"
+    },
+    isOfficial: true,
+    sourceUrl: "https://github.com/mcp-project/mcp-tools/anthropic",
+    categories: ["connectors", "language-models"],
+    tags: ["anthropic", "claude", "api"],
+    stars: 721,
+    downloads: 24312,
+    lastUpdated: "2025-03-18T09:15:30Z",
+    compatibleWith: ["local", "docker", "cloud"]
+  },
+  {
+    id: "mcp-agent-framework",
+    name: "MCP Agent Framework",
+    description: "Build autonomous agents that can use multiple models and tools through MCP connections. Includes planning, memory, and tool usage capabilities",
+    shortDescription: "Framework for building autonomous AI agents",
+    publisher: {
+      id: "mcp-official",
+      name: "MCP Official",
+      url: "https://github.com/mcp-project/mcp-tools"
+    },
+    isOfficial: true,
+    sourceUrl: "https://github.com/mcp-project/mcp-tools/agent-framework",
+    categories: ["agents"],
+    tags: ["agents", "autonomous", "framework"],
+    stars: 1052,
+    downloads: 18754,
+    lastUpdated: "2025-03-22T11:45:12Z",
+    compatibleWith: ["local", "docker", "cloud"]
+  },
+  {
+    id: "mcp-stable-diffusion",
+    name: "Stable Diffusion MCP Interface",
+    description: "Run Stable Diffusion models through MCP with support for txt2img, img2img, inpainting, and more",
+    shortDescription: "Stable Diffusion integration for MCP",
+    publisher: {
+      id: "sd-community",
+      name: "SD Community",
+      url: "https://github.com/sd-community/mcp-sd"
+    },
+    isOfficial: false,
+    sourceUrl: "https://github.com/sd-community/mcp-sd",
+    categories: ["image-generation"],
+    tags: ["stable-diffusion", "image", "generation"],
+    stars: 634,
+    downloads: 15982,
+    lastUpdated: "2025-03-10T16:32:22Z",
+    compatibleWith: ["local", "docker"]
+  },
+  {
+    id: "mcp-whisper",
+    name: "Whisper Speech Recognition",
+    description: "Use OpenAI's Whisper speech recognition models through MCP with additional transcription features",
+    shortDescription: "Speech recognition with Whisper",
+    publisher: {
+      id: "ai-tooling",
+      name: "AI Tooling",
+      url: "https://github.com/ai-tooling/mcp-whisper"
+    },
+    isOfficial: false,
+    sourceUrl: "https://github.com/ai-tooling/mcp-whisper",
+    categories: ["audio"],
+    tags: ["whisper", "speech", "transcription"],
+    stars: 412,
+    downloads: 9874,
+    lastUpdated: "2025-03-05T08:11:45Z",
+    compatibleWith: ["local", "docker"]
+  },
+  {
+    id: "mcp-llamafile",
+    name: "Llamafile Integration",
+    description: "Run llamafile models through MCP with automatic downloading and configuration",
+    shortDescription: "Llamafile for MCP servers",
+    publisher: {
+      id: "llama-ecosystem",
+      name: "Llama Ecosystem",
+      url: "https://github.com/llama-ecosystem/mcp-llamafile"
+    },
+    isOfficial: false,
+    sourceUrl: "https://github.com/llama-ecosystem/mcp-llamafile",
+    categories: ["language-models"],
+    tags: ["llama", "local", "llamafile"],
+    stars: 879,
+    downloads: 21354,
+    lastUpdated: "2025-03-25T14:22:15Z",
+    compatibleWith: ["local", "docker"]
+  },
+  {
+    id: "mcp-vector-store",
+    name: "Vector Database Connector",
+    description: "Connect to popular vector databases like Pinecone, Qdrant, and Milvus through a unified interface",
+    shortDescription: "Unified vector database interface",
+    publisher: {
+      id: "mcp-official",
+      name: "MCP Official",
+      url: "https://github.com/mcp-project/mcp-tools"
+    },
+    isOfficial: true,
+    sourceUrl: "https://github.com/mcp-project/mcp-tools/vector-store",
+    categories: ["data-analysis", "connectors"],
+    tags: ["vectors", "embedding", "database"],
+    stars: 548,
+    downloads: 11232,
+    lastUpdated: "2025-03-20T10:45:30Z",
+    compatibleWith: ["local", "docker", "cloud"]
+  },
+  {
+    id: "mcp-data-analyzer",
+    name: "Data Analysis Framework",
+    description: "Analyze datasets with AI using a comprehensive set of tools for visualization, statistics, and ML",
+    shortDescription: "AI-powered data analysis toolkit",
+    publisher: {
+      id: "data-science-tools",
+      name: "Data Science Tools",
+      url: "https://github.com/data-science-tools/mcp-analyzer"
+    },
+    isOfficial: false,
+    sourceUrl: "https://github.com/data-science-tools/mcp-analyzer",
+    categories: ["data-analysis"],
+    tags: ["data", "analysis", "visualization"],
+    stars: 498,
+    downloads: 8976,
+    lastUpdated: "2025-03-12T15:34:22Z",
+    compatibleWith: ["local", "docker"]
+  },
+  {
+    id: "mcp-discord-bot",
+    name: "Discord Bot Framework",
+    description: "Create AI-powered Discord bots using MCP tooling and models",
+    shortDescription: "MCP-powered Discord bots",
+    publisher: {
+      id: "community-ai",
+      name: "Community AI",
+      url: "https://github.com/community-ai/mcp-discord"
+    },
+    isOfficial: false,
+    sourceUrl: "https://github.com/community-ai/mcp-discord",
+    categories: ["connectors", "agents"],
+    tags: ["discord", "bot", "integration"],
+    stars: 723,
+    downloads: 16543,
+    lastUpdated: "2025-03-28T09:12:45Z",
+    compatibleWith: ["local", "docker", "cloud"]
+  },
+  {
+    id: "mcp-batch-processor",
+    name: "Batch Processing System",
+    description: "Process large batches of requests to LLMs and other models with queuing and caching",
+    shortDescription: "Efficient batch processing for AI tasks",
+    publisher: {
+      id: "ai-scale",
+      name: "AI Scale",
+      url: "https://github.com/ai-scale/mcp-batch"
+    },
+    isOfficial: false,
+    sourceUrl: "https://github.com/ai-scale/mcp-batch",
+    categories: ["utilities"],
+    tags: ["batch", "processing", "queue"],
+    stars: 321,
+    downloads: 7632,
+    lastUpdated: "2025-03-15T16:22:45Z",
+    compatibleWith: ["local", "docker", "cloud"]
+  }
+];
+
+// Helper function to filter registry tools based on search parameters
+function filterRegistryTools(
+  tools: RegistryTool[],
+  query?: string,
+  category?: string,
+  official?: boolean,
+  sort?: 'popular' | 'newest' | 'name',
+  compatibility?: string[]
+): RegistryTool[] {
+  let filtered = [...tools];
+  
+  // Filter by search query
+  if (query) {
+    const lowerQuery = query.toLowerCase();
+    filtered = filtered.filter(tool => 
+      tool.name.toLowerCase().includes(lowerQuery) ||
+      tool.description.toLowerCase().includes(lowerQuery) ||
+      tool.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
+    );
+  }
+  
+  // Filter by category
+  if (category) {
+    filtered = filtered.filter(tool => 
+      tool.categories.includes(category)
+    );
+  }
+  
+  // Filter by official status
+  if (official !== undefined) {
+    filtered = filtered.filter(tool => 
+      tool.isOfficial === official
+    );
+  }
+  
+  // Filter by compatibility
+  if (compatibility && compatibility.length > 0) {
+    filtered = filtered.filter(tool => 
+      compatibility.some(compat => tool.compatibleWith?.includes(compat))
+    );
+  }
+  
+  // Sort results
+  if (sort) {
+    switch (sort) {
+      case 'popular':
+        filtered.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
+        break;
+      case 'newest':
+        filtered.sort((a, b) => {
+          if (!a.lastUpdated) return 1;
+          if (!b.lastUpdated) return -1;
+          return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
+        });
+        break;
+      case 'name':
+        filtered.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+    }
+  }
+  
+  return filtered;
+}
+
+// Get featured tools
+function getFeaturedTools(limit: number = 5): RegistryTool[] {
+  return [...registryTools]
+    .sort((a, b) => (b.downloads || 0) - (a.downloads || 0))
+    .slice(0, limit);
+}
+
+// Get trending tools (most downloaded in recent period)
+function getTrendingTools(limit: number = 5): RegistryTool[] {
+  return [...registryTools]
+    .sort((a, b) => {
+      // Sort by combination of stars and downloads
+      const aScore = (a.stars || 0) * 0.3 + (a.downloads || 0) * 0.7;
+      const bScore = (b.stars || 0) * 0.3 + (b.downloads || 0) * 0.7;
+      return bScore - aScore;
+    })
+    .slice(0, limit);
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -158,6 +518,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Also broadcast to all clients
           broadcastUpdate('tool_updated', updatedTool);
+          break;
+          
+        case 'search_registry':
+          const query = data.query as string | undefined;
+          const category = data.category as string | undefined;
+          const official = data.official as boolean | undefined;
+          const sort = data.sort as 'popular' | 'newest' | 'name' | undefined;
+          const compatibility = data.compatibility as string[] | undefined;
+          
+          const searchResults = filterRegistryTools(
+            registryTools,
+            query,
+            category,
+            official,
+            sort,
+            compatibility
+          );
+          
+          ws.send(JSON.stringify({
+            type: 'registry_search_results',
+            data: searchResults
+          }));
+          break;
+          
+        case 'get_registry_categories':
+          ws.send(JSON.stringify({
+            type: 'registry_categories',
+            data: registryCategories
+          }));
+          break;
+          
+        case 'install_tool':
+          if (!data.toolId) {
+            throw new Error('Tool ID is required');
+          }
+          
+          if (!data.serverId) {
+            throw new Error('Server ID is required');
+          }
+          
+          // Get the server
+          const installServer = await storage.getServer(Number(data.serverId));
+          if (!installServer) {
+            throw new Error('Server not found');
+          }
+          
+          // Find the tool in the registry
+          const registryTool = registryTools.find(t => t.id === data.toolId);
+          if (!registryTool) {
+            throw new Error('Tool not found in registry');
+          }
+          
+          // Check compatibility
+          if (registryTool.compatibleWith && !registryTool.compatibleWith.includes(installServer.type)) {
+            throw new Error(`Tool is not compatible with server type: ${installServer.type}`);
+          }
+          
+          // Create the tool record in the database
+          const newTool = await storage.createTool({
+            name: registryTool.name,
+            description: registryTool.description,
+            shortDescription: registryTool.shortDescription || null,
+            serverId: Number(data.serverId),
+            installed: true,
+            active: false,
+            categories: registryTool.categories,
+            inputSchema: {
+              // Create a simple schema based on the registry tool
+              type: "object",
+              description: `${registryTool.name} configuration`,
+              properties: {
+                config: {
+                  type: "object",
+                  description: "Configuration options"
+                }
+              },
+              required: ["config"]
+            }
+            // createdAt and lastUsed will be set by the database defaults
+          });
+          
+          // Create activity log
+          await storage.createActivity({
+            type: "success",
+            message: `Installed tool ${registryTool.name} from registry via WebSocket`,
+            serverId: Number(data.serverId),
+            appId: null,
+            toolId: newTool.id
+          });
+          
+          ws.send(JSON.stringify({
+            type: 'tool_installed',
+            data: {
+              tool: newTool,
+              fromRegistry: registryTool.id
+            }
+          }));
+          
+          // Also broadcast to all clients
+          broadcastUpdate('tool_installed', {
+            tool: newTool,
+            fromRegistry: registryTool.id
+          });
+          break;
+          
+        case 'sync_registry':
+          // In a real app, this would sync with external registries
+          const syncResults = {
+            totalSynced: registryTools.length,
+            newTools: Math.floor(Math.random() * 5),
+            updatedTools: Math.floor(Math.random() * 10),
+            timestamp: new Date().toISOString()
+          };
+          
+          // Create activity log
+          await storage.createActivity({
+            type: "info",
+            message: `Synced with registry sources via WebSocket. Found ${syncResults.newTools} new tools.`,
+            serverId: null,
+            appId: null
+          });
+          
+          ws.send(JSON.stringify({
+            type: 'registry_synced',
+            data: syncResults
+          }));
+          
+          // Also broadcast to all clients
+          broadcastUpdate('registry_synced', syncResults);
           break;
           
         default:
@@ -604,6 +1093,212 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching stats:', error);
       res.status(500).json({ message: 'Failed to fetch statistics' });
+    }
+  });
+
+  // Registry API Endpoints
+  
+  // Get registry categories
+  app.get('/api/registry/categories', async (req: Request, res: Response) => {
+    try {
+      res.json(registryCategories);
+    } catch (error) {
+      console.error('Error getting registry categories:', error);
+      res.status(500).json({ message: 'Failed to get registry categories' });
+    }
+  });
+  
+  // Search registry
+  app.get('/api/registry/search', async (req: Request, res: Response) => {
+    try {
+      const query = req.query.query as string | undefined;
+      const category = req.query.category as string | undefined;
+      const official = req.query.official === 'true';
+      const sort = req.query.sort as 'popular' | 'newest' | 'name' | undefined;
+      const compatibility = Array.isArray(req.query.compatibility) 
+        ? req.query.compatibility as string[]
+        : req.query.compatibility
+          ? [req.query.compatibility as string]
+          : undefined;
+      
+      const filtered = filterRegistryTools(
+        registryTools,
+        query,
+        category,
+        req.query.official !== undefined ? official : undefined,
+        sort,
+        compatibility
+      );
+      
+      res.json(filtered);
+    } catch (error) {
+      console.error('Error searching registry:', error);
+      res.status(500).json({ message: 'Failed to search registry' });
+    }
+  });
+  
+  // Get specific tool details
+  app.get('/api/registry/tools/:id', async (req: Request, res: Response) => {
+    try {
+      const tool = registryTools.find(t => t.id === req.params.id);
+      
+      if (!tool) {
+        return res.status(404).json({ message: 'Tool not found in registry' });
+      }
+      
+      res.json(tool);
+    } catch (error) {
+      console.error('Error getting tool details:', error);
+      res.status(500).json({ message: 'Failed to get tool details' });
+    }
+  });
+  
+  // Get featured tools
+  app.get('/api/registry/featured', async (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+      res.json(getFeaturedTools(limit));
+    } catch (error) {
+      console.error('Error getting featured tools:', error);
+      res.status(500).json({ message: 'Failed to get featured tools' });
+    }
+  });
+  
+  // Get trending tools
+  app.get('/api/registry/trending', async (req: Request, res: Response) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
+      res.json(getTrendingTools(limit));
+    } catch (error) {
+      console.error('Error getting trending tools:', error);
+      res.status(500).json({ message: 'Failed to get trending tools' });
+    }
+  });
+  
+  // Check for updates
+  app.get('/api/registry/updates', async (req: Request, res: Response) => {
+    try {
+      // In a real app, this would check for updates from the registry
+      const updatesAvailable = Math.random() > 0.5; // Simulate update availability
+      
+      res.json({
+        updatesAvailable,
+        updatableTools: updatesAvailable ? Math.floor(Math.random() * 5) + 1 : 0,
+        lastChecked: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error checking for updates:', error);
+      res.status(500).json({ message: 'Failed to check for updates' });
+    }
+  });
+  
+  // Install tool from registry
+  app.post('/api/registry/install', async (req: Request, res: Response) => {
+    try {
+      // Validate request body
+      const schema = z.object({
+        toolId: z.string(),
+        serverId: z.number().or(z.string().transform(id => parseInt(id, 10)))
+      });
+      
+      const { toolId, serverId } = schema.parse(req.body);
+      
+      // Get the server
+      const server = await storage.getServer(serverId);
+      if (!server) {
+        return res.status(404).json({ message: 'Server not found' });
+      }
+      
+      // Find the tool in the registry
+      const registryTool = registryTools.find(t => t.id === toolId);
+      if (!registryTool) {
+        return res.status(404).json({ message: 'Tool not found in registry' });
+      }
+      
+      // Check compatibility
+      if (registryTool.compatibleWith && !registryTool.compatibleWith.includes(server.type)) {
+        return res.status(400).json({ 
+          message: `Tool is not compatible with server type: ${server.type}`
+        });
+      }
+      
+      // Create the tool record in the database
+      const newTool = await storage.createTool({
+        name: registryTool.name,
+        description: registryTool.description,
+        shortDescription: registryTool.shortDescription,
+        serverId: serverId,
+        installed: true,
+        active: false,
+        categories: registryTool.categories,
+        inputSchema: {
+          // Create a simple schema based on the registry tool
+          type: "object",
+          description: `${registryTool.name} configuration`,
+          properties: {
+            config: {
+              type: "object",
+              description: "Configuration options"
+            }
+          },
+          required: ["config"]
+        }
+        // createdAt and lastUsed will be set by the database defaults
+      });
+      
+      // Create activity log
+      await storage.createActivity({
+        type: "success",
+        message: `Installed tool ${registryTool.name} from registry`,
+        serverId: serverId,
+        appId: null,
+        toolId: newTool.id
+      });
+      
+      // Broadcast update to all clients
+      broadcastUpdate('tool_installed', {
+        tool: newTool,
+        fromRegistry: registryTool.id
+      });
+      
+      res.status(201).json(newTool);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ message: validationError.message });
+      }
+      
+      console.error('Error installing tool:', error);
+      res.status(500).json({ message: 'Failed to install tool' });
+    }
+  });
+  
+  // Sync registries
+  app.post('/api/registry/sync', async (req: Request, res: Response) => {
+    try {
+      // In a real app, this would sync with external registries
+      const syncResults = {
+        totalSynced: registryTools.length,
+        newTools: Math.floor(Math.random() * 5),
+        updatedTools: Math.floor(Math.random() * 10),
+        timestamp: new Date().toISOString()
+      };
+      
+      // Create activity log
+      await storage.createActivity({
+        type: "info",
+        message: `Synced with registry sources. Found ${syncResults.newTools} new tools.`,
+        serverId: null,
+        appId: null
+      });
+      
+      // Broadcast update to all clients
+      broadcastUpdate('registry_synced', syncResults);
+      
+      res.json(syncResults);
+    } catch (error) {
+      console.error('Error syncing registries:', error);
+      res.status(500).json({ message: 'Failed to sync registries' });
     }
   });
 

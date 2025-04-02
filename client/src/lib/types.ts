@@ -90,7 +90,27 @@ export interface RegistryTool {
   sourceUrl: string;
   categories: string[];
   tags: string[];
+  stars?: number;
+  downloads?: number;
+  lastUpdated?: string;
+  compatibleWith?: string[];
   installed?: boolean;
+}
+
+export interface RegistryCategory {
+  id: string;
+  name: string;
+  description: string;
+  count: number;
+  featured: boolean;
+}
+
+export interface RegistrySearchParams {
+  query?: string;
+  category?: string;
+  official?: boolean;
+  sort?: 'popular' | 'newest' | 'name';
+  compatibility?: string[];
 }
 
 // App types
