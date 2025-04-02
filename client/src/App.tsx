@@ -2,6 +2,8 @@ import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { useEffect } from "react";
+import { jsonRpcClient } from "./lib/jsonrpc";
 import NotFound from "@/pages/not-found";
 import Layout from "@/components/layout/layout";
 import Dashboard from "@/pages/dashboard";
@@ -28,6 +30,40 @@ function Router() {
 }
 
 function App() {
+  // Check for URL parameters to enable headless/API-first operation
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const apiKey = params.get('api_key');
+    const headless = params.get('headless');
+    const autoConnect = params.get('auto_connect');
+    const wsUrl = params.get('ws_url') || undefined;
+    
+    if (apiKey || headless === 'true' || autoConnect === 'true') {
+      console.log('API-first/headless mode detected via URL parameters');
+      
+      // Handle auto-connection for JSON-RPC if requested
+      if (autoConnect === 'true') {
+        try {
+          // Connect using the provided WebSocket URL if available, or use default
+          jsonRpcClient.connect().then(() => {
+            console.log('Auto-connected to MCP server via JSON-RPC');
+            
+            // Test the connection with a ping
+            jsonRpcClient.ping().then((response) => {
+              console.log('MCP server ping response:', response);
+            }).catch(err => {
+              console.error('Failed to ping MCP server:', err);
+            });
+          }).catch(err => {
+            console.error('Failed to auto-connect to MCP server:', err);
+          });
+        } catch (error) {
+          console.error('Error during auto-connect setup:', error);
+        }
+      }
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <Router />

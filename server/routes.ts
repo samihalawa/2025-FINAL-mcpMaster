@@ -385,13 +385,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       data: { timestamp: new Date().toISOString() }
     }));
     
-    ws.on('message', (message: Buffer | string) => {
+    ws.on('message', async (message: Buffer | string) => {
       try {
         const data = JSON.parse(message.toString());
         console.log('Received message:', data);
         
-        // Handle commands sent through WebSocket
-        handleWebSocketCommand(data, ws);
+        // Check if it's a JSON-RPC message (has jsonrpc property)
+        if (data.jsonrpc) {
+          // Handle JSON-RPC message for Claude Desktop compatibility
+          const response = await handleJsonRpc(data, ws);
+          
+          // Send the JSON-RPC response
+          ws.send(JSON.stringify(response));
+        } else {
+          // Handle regular command message
+          handleWebSocketCommand(data, ws);
+        }
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
         ws.send(JSON.stringify({
@@ -415,6 +424,168 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   };
   
+  // Handle JSON-RPC requests
+  const handleJsonRpc = async (request: any, ws: WebSocket) => {
+    console.log('Received JSON-RPC request:', request);
+    
+    // Validate JSON-RPC structure
+    if (!request.jsonrpc || request.jsonrpc !== '2.0' || !request.method) {
+      return {
+        jsonrpc: '2.0',
+        id: request.id || null,
+        error: {
+          code: -32600,
+          message: 'Invalid Request'
+        }
+      };
+    }
+    
+    try {
+      let result: any;
+      
+      // Handle different JSON-RPC methods
+      switch (request.method) {
+        case 'ping':
+          result = {
+            pong: true,
+            timestamp: new Date().toISOString()
+          };
+          break;
+          
+        case 'getServers':
+          result = await storage.getServers();
+          break;
+          
+        case 'getServer':
+          if (!request.params || !request.params.id) {
+            throw { code: -32602, message: 'Invalid params: id is required' };
+          }
+          const server = await storage.getServer(Number(request.params.id));
+          if (!server) {
+            throw { code: -32602, message: 'Server not found' };
+          }
+          result = server;
+          break;
+          
+        case 'toggleWorker':
+          if (!request.params || !request.params.id) {
+            throw { code: -32602, message: 'Invalid params: id is required' };
+          }
+          
+          const targetServer = await storage.getServer(Number(request.params.id));
+          if (!targetServer) {
+            throw { code: -32602, message: 'Server not found' };
+          }
+          
+          const updatedServer = await storage.updateServer(Number(request.params.id), {
+            isWorker: !targetServer.isWorker
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('server_updated', updatedServer);
+          
+          result = updatedServer;
+          break;
+          
+        case 'getTools':
+          result = await storage.getTools();
+          break;
+          
+        case 'getToolsByServer':
+          if (!request.params || !request.params.serverId) {
+            throw { code: -32602, message: 'Invalid params: serverId is required' };
+          }
+          result = await storage.getToolsByServerId(Number(request.params.serverId));
+          break;
+          
+        case 'activateTool':
+          if (!request.params || !request.params.id) {
+            throw { code: -32602, message: 'Invalid params: id is required' };
+          }
+          
+          const toolToActivate = await storage.getTool(Number(request.params.id));
+          if (!toolToActivate) {
+            throw { code: -32602, message: 'Tool not found' };
+          }
+          
+          const activatedTool = await storage.updateTool(Number(request.params.id), {
+            active: true
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('tool_updated', activatedTool);
+          
+          result = activatedTool;
+          break;
+        
+        case 'deactivateTool':
+          if (!request.params || !request.params.id) {
+            throw { code: -32602, message: 'Invalid params: id is required' };
+          }
+          
+          const toolToDeactivate = await storage.getTool(Number(request.params.id));
+          if (!toolToDeactivate) {
+            throw { code: -32602, message: 'Tool not found' };
+          }
+          
+          const deactivatedTool = await storage.updateTool(Number(request.params.id), {
+            active: false
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('tool_updated', deactivatedTool);
+          
+          result = deactivatedTool;
+          break;
+          
+        case 'getStats':
+          const servers = await storage.getServers();
+          const apps = await storage.getApps();
+          const tools = await storage.getTools();
+          
+          result = {
+            totalServers: servers.length,
+            activeServers: servers.filter(s => s.status === 'active').length,
+            warningServers: servers.filter(s => s.status === 'warning').length,
+            connectedApps: apps.filter(a => a.status === 'active').length,
+            activeTools: tools.filter(t => t.active).length
+          };
+          break;
+          
+        default:
+          throw { code: -32601, message: `Method not found: ${request.method}` };
+      }
+      
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        result
+      };
+    } catch (error) {
+      console.error('JSON-RPC error:', error);
+      
+      if (error && typeof error === 'object' && 'code' in error) {
+        return {
+          jsonrpc: '2.0',
+          id: request.id || null,
+          error: {
+            code: (error as any).code,
+            message: (error as any).message || 'Unknown error'
+          }
+        };
+      }
+      
+      return {
+        jsonrpc: '2.0',
+        id: request.id || null,
+        error: {
+          code: -32603,
+          message: error instanceof Error ? error.message : 'Internal error'
+        }
+      };
+    }
+  };
+  
   // Handle WebSocket commands (headless API operations)
   const handleWebSocketCommand = async (data: any, ws: WebSocket) => {
     try {
@@ -423,6 +594,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       switch (data.command) {
+        case 'ping':
+          ws.send(JSON.stringify({
+            type: 'pong',
+            data: { 
+              timestamp: new Date().toISOString(),
+              message: 'MCP server is alive'
+            }
+          }));
+          break;
+          
         case 'sync_servers':
           const servers = await storage.getServers();
           
@@ -1560,6 +1741,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Claude Desktop connection endpoint
+  app.get('/api/connect', (req: Request, res: Response) => {
+    // Extract parameters from the query
+    const clientId = req.query.client_id as string || 'unknown';
+    const clientVersion = req.query.version as string || 'unknown';
+    
+    // Log the connection attempt
+    console.log(`Connection attempt from Claude Desktop: ${clientId} (v${clientVersion})`);
+    
+    // Create a connection activity log
+    storage.createActivity({
+      type: "info",
+      message: `Claude Desktop connection: ${clientId} (v${clientVersion})`,
+      serverId: null,
+      appId: null
+    }).catch(err => console.error('Failed to log connection activity:', err));
+    
+    // Return connection details
+    res.json({
+      status: 'connected',
+      serverName: 'MCP Server',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      connectedClients: wss.clients.size,
+      availableServers: storage.getServers().then(servers => servers.length).catch(() => 0),
+      wsEndpoint: '/ws',
+      jsonRpcEnabled: true
+    });
+  });
+  
   // Health check endpoint for monitoring
   app.get('/api/health', (req: Request, res: Response) => {
     res.json({

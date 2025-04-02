@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import WorkerToggle from "../worker-toggle";
+import { McpConnection } from "../mcp-connection";
 
 export default function Navbar() {
   const [location] = useLocation();
@@ -58,23 +59,26 @@ export default function Navbar() {
                 </div>
                 <nav className="flex-1 px-2 py-4 space-y-1">
                   {navItems.map((item) => (
-                    <Link key={item.path} href={item.path}>
-                      <a 
-                        className={`flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                          isActive(item.path)
-                            ? 'bg-primary-50 text-primary-700'
-                            : 'text-neutral-700 hover:bg-neutral-100'
-                        }`}
-                        onClick={() => setIsOpen(false)}
-                      >
-                        {item.icon}
-                        {item.label}
-                      </a>
+                    <Link 
+                      key={item.path} 
+                      href={item.path}
+                      className={`flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                        isActive(item.path)
+                          ? 'bg-primary-50 text-primary-700'
+                          : 'text-neutral-700 hover:bg-neutral-100'
+                      }`}
+                      onClick={() => setIsOpen(false)}
+                    >
+                      {item.icon}
+                      {item.label}
                     </Link>
                   ))}
                 </nav>
                 <div className="p-4 border-t border-neutral-200">
                   <WorkerToggle />
+                  <div className="mt-4">
+                    <McpConnection />
+                  </div>
                 </div>
               </div>
             </SheetContent>
@@ -83,6 +87,10 @@ export default function Navbar() {
             <h1 className="text-lg font-semibold text-neutral-900">MCP Hub</h1>
             <p className="text-xs text-neutral-500">Server Manager</p>
           </div>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <McpConnection />
         </div>
       </div>
     </div>

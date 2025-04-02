@@ -45,17 +45,17 @@ export default function Sidebar() {
         <div className="flex flex-col flex-grow overflow-y-auto">
           <nav className="flex-1 px-2 py-4 space-y-1">
             {navItems.map((item) => (
-              <Link key={item.path} href={item.path}>
-                <a 
-                  className={`flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                    isActive(item.path)
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'text-neutral-700 hover:bg-neutral-100'
-                  }`}
-                >
-                  {item.icon}
-                  {item.label}
-                </a>
+              <Link 
+                key={item.path} 
+                href={item.path}
+                className={`flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                  isActive(item.path)
+                    ? 'bg-primary-50 text-primary-700'
+                    : 'text-neutral-700 hover:bg-neutral-100'
+                }`}
+              >
+                {item.icon}
+                {item.label}
               </Link>
             ))}
           </nav>
