@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertServerSchema, insertAppSchema, insertActivitySchema } from "@shared/schema";
+import { insertServerSchema, insertAppSchema, insertActivitySchema, insertToolSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { WebSocketServer } from "ws";
@@ -110,6 +110,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Also broadcast to all clients
           broadcastUpdate('server_updated', updatedServer);
+          break;
+          
+        case 'get_tools':
+          const tools = await storage.getTools();
+          
+          ws.send(JSON.stringify({
+            type: 'tools_list',
+            data: tools
+          }));
+          break;
+          
+        case 'get_server_tools':
+          if (!data.serverId) {
+            throw new Error('Server ID is required');
+          }
+          
+          const serverTools = await storage.getToolsByServerId(Number(data.serverId));
+          
+          ws.send(JSON.stringify({
+            type: 'server_tools',
+            data: {
+              serverId: Number(data.serverId),
+              tools: serverTools
+            }
+          }));
+          break;
+          
+        case 'toggle_tool':
+          if (!data.toolId) {
+            throw new Error('Tool ID is required');
+          }
+          
+          const tool = await storage.getTool(Number(data.toolId));
+          if (!tool) {
+            throw new Error('Tool not found');
+          }
+          
+          const updatedTool = await storage.updateTool(Number(data.toolId), {
+            active: !tool.active
+          });
+          
+          ws.send(JSON.stringify({
+            type: 'tool_updated',
+            data: updatedTool
+          }));
+          
+          // Also broadcast to all clients
+          broadcastUpdate('tool_updated', updatedTool);
           break;
           
         default:
@@ -339,6 +387,133 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Tools
+  app.get('/api/tools', async (req: Request, res: Response) => {
+    try {
+      const tools = await storage.getTools();
+      res.json(tools);
+    } catch (error) {
+      console.error('Error fetching tools:', error);
+      res.status(500).json({ message: 'Failed to fetch tools' });
+    }
+  });
+  
+  app.get('/api/servers/:serverId/tools', async (req: Request, res: Response) => {
+    try {
+      const serverId = parseInt(req.params.serverId);
+      const tools = await storage.getToolsByServerId(serverId);
+      res.json(tools);
+    } catch (error) {
+      console.error('Error fetching tools by server:', error);
+      res.status(500).json({ message: 'Failed to fetch tools' });
+    }
+  });
+  
+  app.get('/api/tools/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const tool = await storage.getTool(id);
+      
+      if (!tool) {
+        return res.status(404).json({ message: 'Tool not found' });
+      }
+      
+      res.json(tool);
+    } catch (error) {
+      console.error('Error fetching tool:', error);
+      res.status(500).json({ message: 'Failed to fetch tool' });
+    }
+  });
+  
+  app.post('/api/tools', async (req: Request, res: Response) => {
+    try {
+      const toolData = insertToolSchema.parse(req.body);
+      
+      // Validate the server exists before creating the tool
+      const server = await storage.getServer(toolData.serverId);
+      if (!server) {
+        return res.status(404).json({ message: 'Server not found' });
+      }
+      
+      const tool = await storage.createTool(toolData);
+      
+      // Broadcast update to all clients
+      broadcastUpdate('tool_created', tool);
+      
+      res.status(201).json(tool);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ message: validationError.message });
+      }
+      
+      console.error('Error creating tool:', error);
+      res.status(400).json({ message: 'Failed to create tool' });
+    }
+  });
+  
+  app.patch('/api/tools/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const toolData = req.body;
+      
+      // Validate only the fields that are provided
+      const partialSchema = insertToolSchema.partial();
+      const validData = partialSchema.parse(toolData);
+      
+      const updatedTool = await storage.updateTool(id, validData);
+      
+      if (!updatedTool) {
+        return res.status(404).json({ message: 'Tool not found' });
+      }
+      
+      // Broadcast update to all clients
+      broadcastUpdate('tool_updated', updatedTool);
+      
+      res.json(updatedTool);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const validationError = fromZodError(error);
+        return res.status(400).json({ message: validationError.message });
+      }
+      
+      console.error('Error updating tool:', error);
+      res.status(500).json({ message: 'Failed to update tool' });
+    }
+  });
+  
+  app.delete('/api/tools/:id', async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteTool(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: 'Tool not found' });
+      }
+      
+      // Broadcast update to all clients
+      broadcastUpdate('tool_deleted', { id });
+      
+      res.status(204).end();
+    } catch (error) {
+      console.error('Error deleting tool:', error);
+      res.status(500).json({ message: 'Failed to delete tool' });
+    }
+  });
+  
+  // Get activities related to a specific tool
+  app.get('/api/tools/:toolId/activities', async (req: Request, res: Response) => {
+    try {
+      const toolId = parseInt(req.params.toolId);
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const activities = await storage.getActivitiesByToolId(toolId, limit);
+      res.json(activities);
+    } catch (error) {
+      console.error('Error fetching activities by tool:', error);
+      res.status(500).json({ message: 'Failed to fetch activities' });
+    }
+  });
+  
   // Activities
   app.get('/api/activities', async (req: Request, res: Response) => {
     try {
@@ -411,17 +586,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const servers = await storage.getServers();
       const apps = await storage.getApps();
+      const tools = await storage.getTools();
       
       const totalServers = servers.length;
       const activeServers = servers.filter(s => s.status === 'active').length;
       const warningServers = servers.filter(s => s.status === 'warning').length;
       const connectedApps = apps.filter(a => a.status === 'active').length;
+      const activeTools = tools.filter(t => t.active).length;
       
       res.json({
         totalServers,
         activeServers,
         warningServers,
-        connectedApps
+        connectedApps,
+        activeTools
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -461,11 +639,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             const servers = await storage.getServers();
             const apps = await storage.getApps();
+            const tools = await storage.getTools();
             
             const totalServers = servers.length;
             const activeServers = servers.filter(s => s.status === 'active').length;
             const warningServers = servers.filter(s => s.status === 'warning').length;
             const connectedApps = apps.filter(a => a.status === 'active').length;
+            const activeTools = tools.filter(t => t.active).length;
             
             return res.json({
               success: true,
@@ -473,7 +653,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 totalServers,
                 activeServers,
                 warningServers,
-                connectedApps
+                connectedApps,
+                activeTools
               }
             });
           } catch (error) {
@@ -575,6 +756,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
             data: updatedServer
           });
           
+        case 'get_tool':
+          if (!id) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'ID parameter is required for get_tool action'
+            });
+          }
+          
+          const tool = await storage.getTool(Number(id));
+          if (!tool) {
+            return res.status(404).json({ 
+              success: false, 
+              message: 'Tool not found'
+            });
+          }
+          
+          return res.json({
+            success: true,
+            data: tool
+          });
+          
+        case 'get_server_tools':
+          if (!id) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'ID parameter is required for get_server_tools action'
+            });
+          }
+          
+          const serverTools = await storage.getToolsByServerId(Number(id));
+          return res.json({
+            success: true,
+            data: serverTools
+          });
+          
+        case 'activate_tool':
+          if (!id) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'ID parameter is required for activate_tool action'
+            });
+          }
+          
+          const targetTool = await storage.getTool(Number(id));
+          if (!targetTool) {
+            return res.status(404).json({ 
+              success: false, 
+              message: 'Tool not found'
+            });
+          }
+          
+          const updatedTool = await storage.updateTool(Number(id), {
+            active: true
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('tool_updated', updatedTool);
+          
+          return res.json({
+            success: true,
+            message: 'Tool activated',
+            data: updatedTool
+          });
+          
+        case 'deactivate_tool':
+          if (!id) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'ID parameter is required for deactivate_tool action'
+            });
+          }
+          
+          const targetToolToDeactivate = await storage.getTool(Number(id));
+          if (!targetToolToDeactivate) {
+            return res.status(404).json({ 
+              success: false, 
+              message: 'Tool not found'
+            });
+          }
+          
+          const updatedToolDeactivated = await storage.updateTool(Number(id), {
+            active: false
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('tool_updated', updatedToolDeactivated);
+          
+          return res.json({
+            success: true,
+            message: 'Tool deactivated',
+            data: updatedToolDeactivated
+          });
+        
         default:
           return res.status(400).json({ 
             success: false, 

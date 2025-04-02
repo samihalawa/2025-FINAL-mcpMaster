@@ -1,6 +1,7 @@
 import { 
   users, type User, type InsertUser, 
   servers, type Server, type InsertServer,
+  tools, type Tool, type InsertTool,
   apps, type App, type InsertApp,
   activities, type Activity, type InsertActivity
 } from "@shared/schema";
@@ -18,6 +19,14 @@ export interface IStorage {
   updateServer(id: number, server: Partial<InsertServer>): Promise<Server | undefined>;
   deleteServer(id: number): Promise<boolean>;
   
+  // Tool methods
+  getTool(id: number): Promise<Tool | undefined>;
+  getTools(): Promise<Tool[]>;
+  getToolsByServerId(serverId: number): Promise<Tool[]>;
+  createTool(tool: InsertTool): Promise<Tool>;
+  updateTool(id: number, tool: Partial<InsertTool>): Promise<Tool | undefined>;
+  deleteTool(id: number): Promise<boolean>;
+  
   // App methods
   getApp(id: number): Promise<App | undefined>;
   getApps(): Promise<App[]>;
@@ -29,28 +38,33 @@ export interface IStorage {
   // Activity methods
   getActivities(limit?: number): Promise<Activity[]>;
   getActivitiesByServerId(serverId: number, limit?: number): Promise<Activity[]>;
+  getActivitiesByToolId(toolId: number, limit?: number): Promise<Activity[]>;
   createActivity(activity: InsertActivity): Promise<Activity>;
 }
 
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
   private servers: Map<number, Server>;
+  private tools: Map<number, Tool>;
   private apps: Map<number, App>;
   private activities: Map<number, Activity>;
   
   private userIdCounter: number;
   private serverIdCounter: number;
+  private toolIdCounter: number;
   private appIdCounter: number;
   private activityIdCounter: number;
 
   constructor() {
     this.users = new Map();
     this.servers = new Map();
+    this.tools = new Map();
     this.apps = new Map();
     this.activities = new Map();
     
     this.userIdCounter = 1;
     this.serverIdCounter = 1;
+    this.toolIdCounter = 1;
     this.appIdCounter = 1;
     this.activityIdCounter = 1;
 
@@ -205,6 +219,93 @@ export class MemStorage implements IStorage {
     activities.forEach(activity => {
       this.activities.set(activity.id, activity as Activity);
     });
+    
+    // Sample tools
+    const searchTool: Tool = {
+      id: this.toolIdCounter++,
+      name: "mcp_search",
+      description: "Searches for information across connected MCP servers and tools",
+      shortDescription: "Search for information",
+      serverId: server1.id,
+      installed: true,
+      active: true,
+      categories: ["utility", "search"],
+      inputSchema: {
+        description: "Search parameters for the MCP search tool",
+        properties: {
+          query: {
+            type: "string",
+            description: "The search query"
+          },
+          exact: {
+            type: "boolean",
+            description: "Whether to perform an exact match search",
+            default: false
+          }
+        },
+        required: ["query"],
+        type: "object"
+      },
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+      lastUsed: new Date(Date.now() - 1 * 60 * 60 * 1000) // 1 hour ago
+    };
+    
+    const configTool: Tool = {
+      id: this.toolIdCounter++,
+      name: "mcp_config",
+      description: "Configure MCP settings and parameters",
+      shortDescription: "Configuration utility",
+      serverId: server1.id,
+      installed: true,
+      active: true,
+      categories: ["utility", "configuration"],
+      inputSchema: {
+        description: "Configuration parameters",
+        properties: {
+          tool_id: {
+            type: "string",
+            description: "The ID of the tool to configure"
+          },
+          config: {
+            type: "object",
+            description: "Configuration object with settings",
+            additionalProperties: true
+          }
+        },
+        required: ["tool_id", "config"],
+        type: "object"
+      },
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+      lastUsed: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2 hours ago
+    };
+    
+    const installTool: Tool = {
+      id: this.toolIdCounter++,
+      name: "mcp_install",
+      description: "Install tools from the MCP registry",
+      shortDescription: "Tool installer",
+      serverId: server1.id,
+      installed: true,
+      active: true,
+      categories: ["utility", "installation"],
+      inputSchema: {
+        description: "Installation parameters",
+        properties: {
+          tool_id: {
+            type: "string",
+            description: "The ID of the tool to install"
+          }
+        },
+        required: ["tool_id"],
+        type: "object"
+      },
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+      lastUsed: new Date(Date.now() - 3 * 60 * 60 * 1000) // 3 hours ago
+    };
+    
+    this.tools.set(searchTool.id, searchTool);
+    this.tools.set(configTool.id, configTool);
+    this.tools.set(installTool.id, installTool);
   }
 
   // User methods
@@ -239,8 +340,14 @@ export class MemStorage implements IStorage {
     const server: Server = { 
       ...insertServer, 
       id, 
+      status: insertServer.status || "inactive",
+      cpuUsage: insertServer.cpuUsage ?? 0,
+      memoryUsage: insertServer.memoryUsage ?? 0,
+      totalMemory: insertServer.totalMemory ?? 8,
+      models: insertServer.models || [],
+      isWorker: insertServer.isWorker ?? false,
       createdAt: new Date(), 
-      lastActive: new Date() 
+      lastActive: new Date()
     };
     this.servers.set(id, server);
     
@@ -297,6 +404,90 @@ export class MemStorage implements IStorage {
     return success;
   }
   
+  // Tool methods
+  async getTool(id: number): Promise<Tool | undefined> {
+    return this.tools.get(id);
+  }
+  
+  async getTools(): Promise<Tool[]> {
+    return Array.from(this.tools.values());
+  }
+  
+  async getToolsByServerId(serverId: number): Promise<Tool[]> {
+    return Array.from(this.tools.values()).filter(tool => tool.serverId === serverId);
+  }
+  
+  async createTool(insertTool: InsertTool): Promise<Tool> {
+    const id = this.toolIdCounter++;
+    const tool: Tool = { 
+      ...insertTool, 
+      id,
+      shortDescription: insertTool.shortDescription || null,
+      active: insertTool.active || false,
+      installed: insertTool.installed || false,
+      categories: insertTool.categories || [],
+      createdAt: new Date(),
+      lastUsed: null
+    };
+    
+    this.tools.set(id, tool);
+    
+    // Create activity log
+    await this.createActivity({
+      type: "success",
+      message: `Tool '${tool.name}' created`,
+      serverId: tool.serverId,
+      appId: null,
+      toolId: tool.id
+    });
+    
+    return tool;
+  }
+  
+  async updateTool(id: number, updatedFields: Partial<InsertTool>): Promise<Tool | undefined> {
+    const tool = this.tools.get(id);
+    if (!tool) return undefined;
+    
+    const updatedTool: Tool = {
+      ...tool,
+      ...updatedFields,
+      lastUsed: updatedFields.active ? new Date() : tool.lastUsed
+    };
+    
+    this.tools.set(id, updatedTool);
+    
+    // Create activity log
+    await this.createActivity({
+      type: "info",
+      message: `Tool '${tool.name}' updated`,
+      serverId: tool.serverId,
+      appId: null,
+      toolId: tool.id
+    });
+    
+    return updatedTool;
+  }
+  
+  async deleteTool(id: number): Promise<boolean> {
+    const tool = this.tools.get(id);
+    if (!tool) return false;
+    
+    const success = this.tools.delete(id);
+    
+    // Create activity log
+    if (success) {
+      await this.createActivity({
+        type: "info",
+        message: `Tool '${tool.name}' deleted`,
+        serverId: tool.serverId,
+        appId: null,
+        toolId: null
+      });
+    }
+    
+    return success;
+  }
+  
   // App methods
   async getApp(id: number): Promise<App | undefined> {
     return this.apps.get(id);
@@ -314,7 +505,9 @@ export class MemStorage implements IStorage {
     const id = this.appIdCounter++;
     const app: App = { 
       ...insertApp, 
-      id, 
+      id,
+      status: insertApp.status || "inactive",
+      version: insertApp.version || null,
       lastActive: new Date() 
     };
     this.apps.set(id, app);
@@ -366,7 +559,12 @@ export class MemStorage implements IStorage {
   // Activity methods
   async getActivities(limit?: number): Promise<Activity[]> {
     const activities = Array.from(this.activities.values())
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      .sort((a, b) => {
+        if (a.createdAt instanceof Date && b.createdAt instanceof Date) {
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        }
+        return 0;
+      });
     
     return limit ? activities.slice(0, limit) : activities;
   }
@@ -374,7 +572,25 @@ export class MemStorage implements IStorage {
   async getActivitiesByServerId(serverId: number, limit?: number): Promise<Activity[]> {
     const activities = Array.from(this.activities.values())
       .filter(activity => activity.serverId === serverId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      .sort((a, b) => {
+        if (a.createdAt instanceof Date && b.createdAt instanceof Date) {
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        }
+        return 0;
+      });
+    
+    return limit ? activities.slice(0, limit) : activities;
+  }
+  
+  async getActivitiesByToolId(toolId: number, limit?: number): Promise<Activity[]> {
+    const activities = Array.from(this.activities.values())
+      .filter(activity => activity.toolId === toolId)
+      .sort((a, b) => {
+        if (a.createdAt instanceof Date && b.createdAt instanceof Date) {
+          return b.createdAt.getTime() - a.createdAt.getTime();
+        }
+        return 0;
+      });
     
     return limit ? activities.slice(0, limit) : activities;
   }
@@ -383,7 +599,10 @@ export class MemStorage implements IStorage {
     const id = this.activityIdCounter++;
     const activity: Activity = { 
       ...insertActivity, 
-      id, 
+      id,
+      serverId: insertActivity.serverId ?? null,
+      appId: insertActivity.appId ?? null,
+      toolId: insertActivity.toolId ?? null,
       createdAt: new Date() 
     };
     this.activities.set(id, activity);

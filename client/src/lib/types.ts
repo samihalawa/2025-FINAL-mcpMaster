@@ -24,6 +24,75 @@ export interface CreateServerRequest {
   isWorker?: boolean;
 }
 
+// Tool types
+export interface PropertyDefinition {
+  default?: any;
+  description?: string;
+  exclusiveMaximum?: number;
+  exclusiveMinimum?: number;
+  minimum?: number;
+  maximum?: number;
+  title?: string;
+  type?: string | string[];
+  format?: string;
+  additionalProperties?: boolean;
+  items?: PropertyDefinition;
+  allOf?: PropertyDefinition[];
+}
+
+export interface InputSchema {
+  description: string;
+  properties: Record<string, PropertyDefinition>;
+  required: string[];
+  title?: string;
+  type: string;
+  additionalProperties?: boolean;
+  $schema?: string;
+}
+
+export interface Tool {
+  id: number;
+  name: string;
+  description: string;
+  shortDescription: string | null;
+  serverId: number;
+  installed: boolean;
+  active: boolean;
+  categories: string[];
+  inputSchema: InputSchema;
+  createdAt: string | Date;
+  lastUsed: string | Date | null;
+}
+
+export interface CreateToolRequest {
+  name: string;
+  description: string;
+  shortDescription?: string;
+  serverId: number;
+  installed?: boolean;
+  active?: boolean;
+  categories?: string[];
+  inputSchema: InputSchema;
+}
+
+// Registry types for tooling
+export interface RegistryTool {
+  id: string;
+  name: string;
+  description: string;
+  shortDescription: string;
+  publisher: {
+    id: string;
+    name: string;
+    url: string;
+  };
+  isOfficial: boolean;
+  sourceUrl: string;
+  categories: string[];
+  tags: string[];
+  installed?: boolean;
+}
+
 // App types
 export interface App {
   id: number;
@@ -42,6 +111,7 @@ export interface Activity {
   message: string;
   serverId: number | null;
   appId: number | null;
+  toolId?: number | null;
   createdAt: string | Date;
 }
 
@@ -65,10 +135,30 @@ export interface Stats {
   activeServers: number;
   warningServers: number;
   connectedApps: number;
+  activeTools?: number;
 }
 
 // WebSocket message types
 export interface WebSocketMessage {
   type: string;
   data: any;
+}
+
+// JSON-RPC types
+export interface JsonRpcRequest {
+  jsonrpc: string;
+  id: number | string;
+  method: string;
+  params: any;
+}
+
+export interface JsonRpcResponse {
+  jsonrpc: string;
+  id: number | string;
+  result?: any;
+  error?: {
+    code: number;
+    message: string;
+    data?: any;
+  };
 }

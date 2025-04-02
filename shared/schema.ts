@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -46,6 +46,27 @@ export const insertServerSchema = createInsertSchema(servers)
 export type InsertServer = z.infer<typeof insertServerSchema>;
 export type Server = typeof servers.$inferSelect;
 
+// MCP Tool schema
+export const tools = pgTable("tools", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  shortDescription: text("short_description"),
+  serverId: integer("server_id").notNull(),
+  installed: boolean("installed").default(false),
+  active: boolean("active").default(false),
+  categories: text("categories").array().default([]),
+  inputSchema: jsonb("input_schema").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastUsed: timestamp("last_used"),
+});
+
+export const insertToolSchema = createInsertSchema(tools)
+  .omit({ id: true, createdAt: true, lastUsed: true });
+
+export type InsertTool = z.infer<typeof insertToolSchema>;
+export type Tool = typeof tools.$inferSelect;
+
 // Connected Applications schema
 export const apps = pgTable("apps", {
   id: serial("id").primaryKey(),
@@ -70,6 +91,7 @@ export const activities = pgTable("activities", {
   message: text("message").notNull(),
   serverId: integer("server_id"),
   appId: integer("app_id"),
+  toolId: integer("tool_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
