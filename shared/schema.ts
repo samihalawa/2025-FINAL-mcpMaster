@@ -39,6 +39,10 @@ export const servers = pgTable("servers", {
   stars: integer("stars").default(0),
   forks: integer("forks").default(0),
   owner: text("owner").default(""),
+  // Smithery configuration
+  smitheryPackage: text("smithery_package"),
+  apiKey: text("api_key"),
+  commandConfig: jsonb("command_config"),
 });
 
 export const insertServerSchema = createInsertSchema(servers)
@@ -54,6 +58,9 @@ export const insertServerSchema = createInsertSchema(servers)
     stars: z.number().optional(),
     forks: z.number().optional(),
     owner: z.string().optional(),
+    smitheryPackage: z.string().optional(),
+    apiKey: z.string().optional(),
+    commandConfig: z.record(z.any()).optional(),
   });
 
 export type InsertServer = z.infer<typeof insertServerSchema>;

@@ -47,6 +47,54 @@ interface GitHubRepo {
   updated_at: string;
 }
 
+// Smithery MCP server packages
+interface SmitheryPackage {
+  id: string;
+  name: string;
+  description: string;
+  package: string;
+  apiKeyRequired: boolean;
+  config: Record<string, any>;
+}
+
+const SMITHERY_PACKAGES: SmitheryPackage[] = [
+  { 
+    id: 'server-sequential-thinking',
+    name: 'Sequential Thinking',
+    description: 'A Smithery MCP server for sequential reasoning',
+    package: '@smithery/server-sequential-thinking',
+    apiKeyRequired: true,
+    config: {
+      model: "claude-3-opus-20240229",
+      max_tokens: 4000,
+      system_prompt: "You are a helpful AI assistant that uses sequential thinking to solve problems."
+    }
+  },
+  {
+    id: 'desktop-commander',
+    name: 'Desktop Commander',
+    description: 'A Smithery MCP server for desktop automation',
+    package: '@smithery/desktop-commander',
+    apiKeyRequired: true,
+    config: {
+      model: "claude-3-sonnet-20240229",
+      max_tokens: 2000
+    }
+  },
+  {
+    id: 'think-mcp-server',
+    name: 'Think MCP Server',
+    description: 'A minimal MCP server for autonomous agents',
+    package: '@smithery/think-mcp-server',
+    apiKeyRequired: true,
+    config: {
+      model: "claude-3-haiku-20240307",
+      max_tokens: 1000,
+      temperature: 0
+    }
+  }
+];
+
 // Registry data structure to handle MCP tool registry
 interface RegistryTool {
   id: string;
@@ -501,7 +549,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
   
   // Handle JSON-RPC requests
-  const handleJsonRpc = async (request: any, ws: WebSocket) => {
+  const handleJsonRpc = async (request: any, ws: WebSocket | null) => {
     console.log('Received JSON-RPC request:', request);
     
     // Validate JSON-RPC structure
@@ -696,6 +744,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
           result = allServers;
           break;
           
+        case 'getSmitheryPackages':
+          // Return the list of available Smithery packages
+          result = SMITHERY_PACKAGES;
+          break;
+          
+        case 'installSmitheryPackage':
+          if (!request.params || !request.params.packageId) {
+            throw { code: -32602, message: 'Invalid params: packageId is required' };
+          }
+          
+          // Find the package in the available packages
+          const smitheryPackage = SMITHERY_PACKAGES.find(p => p.id === request.params.packageId);
+          if (!smitheryPackage) {
+            throw { code: -32602, message: 'Smithery package not found' };
+          }
+          
+          // Check if API key is required but not provided
+          if (smitheryPackage.apiKeyRequired && !request.params.apiKey) {
+            throw { code: -32602, message: 'API key is required for this Smithery package' };
+          }
+          
+          // Create a new server entry
+          const smitheryServerData = {
+            name: request.params.name || `${smitheryPackage.name} MCP Server`,
+            type: 'smithery',
+            address: 'localhost',
+            port: request.params.port || 50050 + Math.floor(Math.random() * 100), // Random port to avoid conflicts
+            status: 'inactive',
+            models: ['Claude-3-Opus', 'Claude-3-Sonnet', 'Claude-3-Haiku', 'GPT-4'],
+            smitheryPackage: smitheryPackage.package,
+            apiKey: request.params.apiKey,
+            commandConfig: request.params.config || smitheryPackage.config,
+            description: smitheryPackage.description,
+            isWorker: false
+          };
+          
+          // Add to database
+          const createdSmitheryServer = await storage.createServer(smitheryServerData);
+          
+          // Create activity log
+          await storage.createActivity({
+            type: "success",
+            message: `Installed Smithery MCP server via RPC: ${smitheryPackage.name}`,
+            serverId: createdSmitheryServer.id,
+            appId: null
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('server_created', createdSmitheryServer);
+          
+          result = createdSmitheryServer;
+          break;
+          
         default:
           throw { code: -32601, message: `Method not found: ${request.method}` };
       }
@@ -865,6 +966,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
             type: 'registry_search_results',
             data: searchResults
           }));
+          break;
+          
+        case 'get_smithery_packages':
+          ws.send(JSON.stringify({
+            type: 'smithery_packages',
+            data: SMITHERY_PACKAGES
+          }));
+          break;
+          
+        case 'install_smithery_package':
+          if (!data.packageId) {
+            throw new Error('Package ID is required');
+          }
+          
+          // Find the package in the available packages
+          const smitheryPackage = SMITHERY_PACKAGES.find(p => p.id === data.packageId);
+          if (!smitheryPackage) {
+            throw new Error('Smithery package not found');
+          }
+          
+          // Check if API key is required but not provided
+          if (smitheryPackage.apiKeyRequired && !data.apiKey) {
+            throw new Error('API key is required for this Smithery package');
+          }
+          
+          // Create a new server entry
+          const smitheryServerData = {
+            name: data.name || `${smitheryPackage.name} MCP Server`,
+            type: 'smithery',
+            address: 'localhost',
+            port: data.port || 50050 + Math.floor(Math.random() * 100), // Random port to avoid conflicts
+            status: 'inactive',
+            models: ['Claude-3-Opus', 'Claude-3-Sonnet', 'Claude-3-Haiku', 'GPT-4'],
+            smitheryPackage: smitheryPackage.package,
+            apiKey: data.apiKey,
+            commandConfig: data.config || smitheryPackage.config,
+            description: smitheryPackage.description,
+            isWorker: false
+          };
+          
+          // Add to database
+          const createdSmitheryServer = await storage.createServer(smitheryServerData);
+          
+          // Create activity log
+          await storage.createActivity({
+            type: "success",
+            message: `Installed Smithery MCP server via WebSocket: ${smitheryPackage.name}`,
+            serverId: createdSmitheryServer.id,
+            appId: null
+          });
+          
+          ws.send(JSON.stringify({
+            type: 'smithery_package_installed',
+            data: createdSmitheryServer
+          }));
+          
+          // Also broadcast to all clients
+          broadcastUpdate('server_created', createdSmitheryServer);
           break;
           
         case 'get_registry_categories':
@@ -1777,6 +1936,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Failed to sync registries' });
     }
   });
+  
+  // Install Smithery MCP server
+  app.post('/api/smithery/install', async (req: Request, res: Response) => {
+    try {
+      // Validate request body
+      const schema = z.object({
+        packageId: z.string(),
+        name: z.string().optional(),
+        apiKey: z.string().optional(),
+        config: z.record(z.any()).optional(),
+        port: z.number().or(z.string().transform(id => parseInt(id, 10))).optional()
+      });
+      
+      const { packageId, name, apiKey, config, port } = schema.parse(req.body);
+      
+      // Find the package in the available packages
+      const smitheryPackage = SMITHERY_PACKAGES.find(p => p.id === packageId);
+      if (!smitheryPackage) {
+        return res.status(404).json({ message: 'Smithery package not found' });
+      }
+      
+      // Check if API key is required but not provided
+      if (smitheryPackage.apiKeyRequired && !apiKey) {
+        return res.status(400).json({ 
+          message: 'API key is required for this Smithery package'
+        });
+      }
+      
+      // Create a new server entry
+      const serverData = {
+        name: name || `${smitheryPackage.name} MCP Server`,
+        type: 'smithery',
+        address: 'localhost',
+        port: port || 50050 + Math.floor(Math.random() * 100), // Random port to avoid conflicts
+        status: 'inactive',
+        models: ['Claude-3-Opus', 'Claude-3-Sonnet', 'Claude-3-Haiku', 'GPT-4'],
+        smitheryPackage: smitheryPackage.package,
+        apiKey: apiKey,
+        commandConfig: config || smitheryPackage.config,
+        description: smitheryPackage.description,
+        isWorker: false
+      };
+      
+      // Add to database
+      const createdServer = await storage.createServer(serverData);
+      
+      // Create activity log
+      await storage.createActivity({
+        type: "success",
+        message: `Installed Smithery MCP server: ${smitheryPackage.name}`,
+        serverId: createdServer.id,
+        appId: null
+      });
+      
+      // Broadcast update to all clients
+      broadcastUpdate('server_created', createdServer);
+      
+      res.status(201).json(createdServer);
+    } catch (error) {
+      console.error('Error installing Smithery package:', error);
+      
+      if (error instanceof ZodError) {
+        return res.status(400).json({ 
+          message: 'Invalid request data',
+          errors: fromZodError(error).message
+        });
+      }
+      
+      res.status(500).json({ message: 'Failed to install Smithery package' });
+    }
+  });
+  
+  // Get available Smithery packages
+  app.get('/api/smithery/packages', (req: Request, res: Response) => {
+    res.json(SMITHERY_PACKAGES);
+  });
 
   // URL Parameter-based API for headless operations
   // This allows direct operations via URL parameters (for testing with curl)
@@ -1896,6 +2131,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
             success: true,
             message: 'Sync completed',
             servers: servers.length
+          });
+          
+        case 'get_smithery_packages':
+          return res.json({
+            success: true,
+            data: SMITHERY_PACKAGES
+          });
+          
+        case 'install_smithery_package':
+          if (!parameters || !parameters.packageId) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'packageId parameter is required for install_smithery_package action'
+            });
+          }
+          
+          // Find the package in the available packages
+          const smitheryPkg = SMITHERY_PACKAGES.find(p => p.id === parameters.packageId);
+          if (!smitheryPkg) {
+            return res.status(404).json({ 
+              success: false, 
+              message: 'Smithery package not found'
+            });
+          }
+          
+          // Check if API key is required but not provided
+          if (smitheryPkg.apiKeyRequired && !parameters.apiKey) {
+            return res.status(400).json({ 
+              success: false, 
+              message: 'API key is required for this Smithery package'
+            });
+          }
+          
+          // Create a new server entry
+          const smitheryData = {
+            name: parameters.name || `${smitheryPkg.name} MCP Server`,
+            type: 'smithery',
+            address: 'localhost',
+            port: parameters.port || 50050 + Math.floor(Math.random() * 100), // Random port to avoid conflicts
+            status: 'inactive',
+            models: ['Claude-3-Opus', 'Claude-3-Sonnet', 'Claude-3-Haiku', 'GPT-4'],
+            smitheryPackage: smitheryPkg.package,
+            apiKey: parameters.apiKey,
+            commandConfig: parameters.config || smitheryPkg.config,
+            description: smitheryPkg.description,
+            isWorker: false
+          };
+          
+          // Add to database
+          const createdSmitheryPkg = await storage.createServer(smitheryData);
+          
+          // Create activity log
+          await storage.createActivity({
+            type: "success",
+            message: `Installed Smithery MCP server via headless API: ${smitheryPkg.name}`,
+            serverId: createdSmitheryPkg.id,
+            appId: null
+          });
+          
+          // Broadcast update to all clients
+          broadcastUpdate('server_created', createdSmitheryPkg);
+          
+          return res.json({
+            success: true,
+            message: `Smithery package ${smitheryPkg.name} installed successfully`,
+            data: createdSmitheryPkg
           });
           
         case 'toggle_worker':
@@ -2064,6 +2365,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       wsEndpoint: '/ws',
       jsonRpcEnabled: true
     });
+  });
+  
+  // Handle JSON-RPC requests via HTTP
+  app.post('/api/connect', async (req: Request, res: Response) => {
+    try {
+      // Validate that this is a JSON-RPC request
+      const request = req.body;
+      
+      if (!request || !request.jsonrpc || request.jsonrpc !== '2.0' || !request.method) {
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          id: request?.id || null,
+          error: {
+            code: -32600,
+            message: 'Invalid Request'
+          }
+        });
+      }
+      
+      console.log('Received JSON-RPC request:', request);
+      
+      // Process the request
+      const response = await handleJsonRpc(request, null);
+      
+      // Set the correct content type and return the response
+      res.setHeader('Content-Type', 'application/json');
+      res.status(200).json(response);
+    } catch (error) {
+      console.error('Error handling JSON-RPC request:', error);
+      
+      // Return a JSON-RPC error response
+      res.setHeader('Content-Type', 'application/json');
+      res.status(200).json({
+        jsonrpc: '2.0',
+        id: req.body?.id || null,
+        error: {
+          code: -32603,
+          message: error instanceof Error ? error.message : 'Internal error'
+        }
+      });
+    }
   });
   
   // Health check endpoint for monitoring
