@@ -73,239 +73,83 @@ export class MemStorage implements IStorage {
   }
 
   private initializeSampleData() {
-    // Sample servers
-    const server1: Server = {
+    // Create a single MCP Manager server
+    const mcpManager: Server = {
       id: this.serverIdCounter++,
-      name: "Primary Server",
+      name: "MCP Manager",
       type: "local",
       address: "localhost",
-      port: 8080,
+      port: 50050,
       status: "active",
-      cpuUsage: 24,
-      memoryUsage: 2.1,
+      cpuUsage: 0,
+      memoryUsage: 0,
       totalMemory: 8,
-      models: ["Claude-3-Opus", "Claude-3-Sonnet", "GPT-4", "GPT-3.5-Turbo"],
+      models: ["Claude-3-Opus", "Claude-3-Sonnet", "Claude-3-Haiku", "GPT-4"],
       createdAt: new Date(),
       lastActive: new Date(),
-      isWorker: true
+      isWorker: true,
+      // Additional fields required by schema
+      repository: null,
+      version: null,
+      description: null,
+      stars: null,
+      forks: null,
+      owner: null,
+      smitheryPackage: null,
+      apiKey: null,
+      commandConfig: null
     };
     
-    const server2: Server = {
-      id: this.serverIdCounter++,
-      name: "Claude Server",
-      type: "remote",
-      address: "192.168.1.5",
-      port: 8040,
-      status: "active",
-      cpuUsage: 68,
-      memoryUsage: 5.4,
-      totalMemory: 8,
-      models: ["Claude-3-Opus", "Claude-3-Sonnet"],
-      createdAt: new Date(),
-      lastActive: new Date(),
-      isWorker: false
-    };
+    this.servers.set(mcpManager.id, mcpManager);
     
-    const server3: Server = {
-      id: this.serverIdCounter++,
-      name: "Cursor Server",
-      type: "remote",
-      address: "cursor.mcp",
-      port: 9000,
-      status: "warning",
-      cpuUsage: 12,
-      memoryUsage: 0.8,
-      totalMemory: 4,
-      models: ["GPT-4"],
-      createdAt: new Date(),
-      lastActive: new Date(),
-      isWorker: false
-    };
-    
-    this.servers.set(server1.id, server1);
-    this.servers.set(server2.id, server2);
-    this.servers.set(server3.id, server3);
-    
-    // Sample apps
-    const app1: App = {
-      id: this.appIdCounter++,
-      name: "Claude Desktop",
-      type: "Desktop App",
-      version: "2.1.0",
-      serverId: server1.id,
-      status: "active",
-      lastActive: new Date(Date.now() - 10 * 60 * 1000) // 10 minutes ago
-    };
-    
-    const app2: App = {
-      id: this.appIdCounter++,
-      name: "Cursor",
-      type: "IDE",
-      version: "1.5.2",
-      serverId: server3.id,
-      status: "warning",
-      lastActive: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2 hours ago
-    };
-    
-    const app3: App = {
-      id: this.appIdCounter++,
-      name: "Cline",
-      type: "CLI Tool",
-      version: "0.9.1",
-      serverId: server1.id,
-      status: "inactive",
-      lastActive: new Date(Date.now() - 24 * 60 * 60 * 1000) // 1 day ago
-    };
-    
-    const app4: App = {
-      id: this.appIdCounter++,
-      name: "Web Interface",
-      type: "Web App",
-      version: "Browser",
-      serverId: server2.id,
-      status: "active",
-      lastActive: new Date()
-    };
-    
-    this.apps.set(app1.id, app1);
-    this.apps.set(app2.id, app2);
-    this.apps.set(app3.id, app3);
-    this.apps.set(app4.id, app4);
-    
-    // Sample activities
-    const activities = [
-      {
-        id: this.activityIdCounter++,
-        type: "success",
-        message: "Server started successfully",
-        serverId: server1.id,
-        appId: null,
-        createdAt: new Date(Date.now() - 10 * 60 * 1000) // 10 minutes ago
-      },
-      {
-        id: this.activityIdCounter++,
-        type: "info",
-        message: "Configuration synchronized",
-        serverId: null,
-        appId: null,
-        createdAt: new Date(Date.now() - 30 * 60 * 1000) // 30 minutes ago
-      },
-      {
-        id: this.activityIdCounter++,
-        type: "warning",
-        message: "Connection warning",
-        serverId: server3.id,
-        appId: null,
-        createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2 hours ago
-      },
-      {
-        id: this.activityIdCounter++,
-        type: "info",
-        message: "New application connected",
-        serverId: server2.id,
-        appId: app4.id,
-        createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000) // 3 hours ago
-      },
-      {
-        id: this.activityIdCounter++,
-        type: "success",
-        message: "Model added successfully",
-        serverId: server2.id,
-        appId: null,
-        createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) // 1 day ago
-      }
-    ];
-    
-    activities.forEach(activity => {
-      this.activities.set(activity.id, activity as Activity);
-    });
-    
-    // Sample tools
-    const searchTool: Tool = {
+    // Create a Smithery Package Manager tool
+    const smitheryTool: Tool = {
       id: this.toolIdCounter++,
-      name: "mcp_search",
-      description: "Searches for information across connected MCP servers and tools",
-      shortDescription: "Search for information",
-      serverId: server1.id,
+      name: "smithery_manager",
+      description: "Tool for installing and managing Smithery MCP packages",
+      shortDescription: "Manage Smithery packages",
+      serverId: mcpManager.id,
       installed: true,
       active: true,
-      categories: ["utility", "search"],
+      categories: ["admin", "smithery"],
       inputSchema: {
-        description: "Search parameters for the MCP search tool",
+        description: "Smithery package installation parameters",
         properties: {
-          query: {
+          packageId: {
             type: "string",
-            description: "The search query"
+            description: "The ID of the Smithery package to install"
           },
-          exact: {
-            type: "boolean",
-            description: "Whether to perform an exact match search",
-            default: false
-          }
-        },
-        required: ["query"],
-        type: "object"
-      },
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      lastUsed: new Date(Date.now() - 1 * 60 * 60 * 1000) // 1 hour ago
-    };
-    
-    const configTool: Tool = {
-      id: this.toolIdCounter++,
-      name: "mcp_config",
-      description: "Configure MCP settings and parameters",
-      shortDescription: "Configuration utility",
-      serverId: server1.id,
-      installed: true,
-      active: true,
-      categories: ["utility", "configuration"],
-      inputSchema: {
-        description: "Configuration parameters",
-        properties: {
-          tool_id: {
+          apiKey: {
             type: "string",
-            description: "The ID of the tool to configure"
+            description: "API key for authentication with the Smithery package"
           },
           config: {
             type: "object",
-            description: "Configuration object with settings",
+            description: "Additional configuration for the Smithery package",
             additionalProperties: true
           }
         },
-        required: ["tool_id", "config"],
+        required: ["packageId"],
         type: "object"
       },
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      lastUsed: new Date(Date.now() - 2 * 60 * 60 * 1000) // 2 hours ago
+      createdAt: new Date(),
+      lastUsed: null
     };
     
-    const installTool: Tool = {
-      id: this.toolIdCounter++,
-      name: "mcp_install",
-      description: "Install tools from the MCP registry",
-      shortDescription: "Tool installer",
-      serverId: server1.id,
-      installed: true,
-      active: true,
-      categories: ["utility", "installation"],
-      inputSchema: {
-        description: "Installation parameters",
-        properties: {
-          tool_id: {
-            type: "string",
-            description: "The ID of the tool to install"
-          }
-        },
-        required: ["tool_id"],
-        type: "object"
-      },
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      lastUsed: new Date(Date.now() - 3 * 60 * 60 * 1000) // 3 hours ago
+    this.tools.set(smitheryTool.id, smitheryTool);
+    
+    // Create a single initialization activity
+    const initActivity = {
+      id: this.activityIdCounter++,
+      type: "success",
+      message: "MCP Manager initialized",
+      serverId: mcpManager.id,
+      appId: null,
+      toolId: null,
+      createdAt: new Date()
     };
     
-    this.tools.set(searchTool.id, searchTool);
-    this.tools.set(configTool.id, configTool);
-    this.tools.set(installTool.id, installTool);
+    this.activities.set(initActivity.id, initActivity as Activity);
   }
 
   // User methods
@@ -347,7 +191,17 @@ export class MemStorage implements IStorage {
       models: insertServer.models || [],
       isWorker: insertServer.isWorker ?? false,
       createdAt: new Date(), 
-      lastActive: new Date()
+      lastActive: new Date(),
+      // Ensure all fields required by the schema are present
+      repository: insertServer.repository || null,
+      version: insertServer.version || null,
+      description: insertServer.description || null,
+      stars: insertServer.stars || null,
+      forks: insertServer.forks || null,
+      owner: insertServer.owner || null,
+      smitheryPackage: insertServer.smitheryPackage || null,
+      apiKey: insertServer.apiKey || null,
+      commandConfig: insertServer.commandConfig || null
     };
     this.servers.set(id, server);
     

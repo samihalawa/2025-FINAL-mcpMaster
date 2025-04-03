@@ -1,7 +1,10 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertServerSchema, insertAppSchema, insertActivitySchema, insertToolSchema } from "@shared/schema";
+import { 
+  insertServerSchema, insertAppSchema, insertActivitySchema, insertToolSchema,
+  type InsertServer, type InsertApp, type InsertActivity, type InsertTool
+} from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { WebSocketServer } from "ws";
@@ -74,7 +77,7 @@ const SMITHERY_PACKAGES: SmitheryPackage[] = [
             "run",
             "@smithery-ai/server-sequential-thinking",
             "--key",
-            "11571649-6b8b-491d-afb7-2ef6044be574"
+            process.env.SMITHERY_API_KEY || "YOUR_SMITHERY_API_KEY"
           ]
         }
       }
@@ -96,7 +99,7 @@ const SMITHERY_PACKAGES: SmitheryPackage[] = [
             "run",
             "@wonderwhy-er/desktop-commander",
             "--key",
-            "11571649-6b8b-491d-afb7-2ef6044be574"
+            process.env.SMITHERY_API_KEY || "YOUR_SMITHERY_API_KEY"
           ]
         }
       }
@@ -118,7 +121,7 @@ const SMITHERY_PACKAGES: SmitheryPackage[] = [
             "run",
             "@PhillipRt/think-mcp-server",
             "--key",
-            "11571649-6b8b-491d-afb7-2ef6044be574"
+            process.env.SMITHERY_API_KEY || "YOUR_SMITHERY_API_KEY"
           ]
         }
       }
@@ -2057,8 +2060,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Define the parameter types for different actions
+      type HeadlessParams = {
+        // Smithery install params
+        packageId?: string;
+        apiKey?: string;
+        name?: string;
+        port?: number;
+        config?: Record<string, any>;
+        // Other params...
+        [key: string]: any;
+      };
+      
       // Parse parameters if provided as JSON string
-      let parameters = {};
+      let parameters: HeadlessParams = {};
       if (params && typeof params === 'string') {
         try {
           parameters = JSON.parse(params);
@@ -2171,7 +2186,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           
         case 'install_smithery_package':
-          if (!parameters || !parameters.packageId) {
+          // Define proper type for parameters
+          interface SmitheryInstallParams {
+            packageId: string;
+            apiKey?: string;
+            name?: string;
+            port?: number;
+            config?: Record<string, any>;
+          }
+          
+          const typedParams = parameters as SmitheryInstallParams;
+          
+          if (!typedParams || !typedParams.packageId) {
             return res.status(400).json({ 
               success: false, 
               message: 'packageId parameter is required for install_smithery_package action'
@@ -2179,7 +2205,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           // Find the package in the available packages
-          const smitheryPkg = SMITHERY_PACKAGES.find(p => p.id === parameters.packageId);
+          const smitheryPkg = SMITHERY_PACKAGES.find(p => p.id === typedParams.packageId);
           if (!smitheryPkg) {
             return res.status(404).json({ 
               success: false, 
@@ -2188,7 +2214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           // Check if API key is required but not provided
-          if (smitheryPkg.apiKeyRequired && !parameters.apiKey) {
+          if (smitheryPkg.apiKeyRequired && !typedParams.apiKey) {
             return res.status(400).json({ 
               success: false, 
               message: 'API key is required for this Smithery package'
@@ -2196,16 +2222,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           // Create a new server entry
-          const smitheryData = {
-            name: parameters.name || `${smitheryPkg.name} MCP Server`,
+          const smitheryData: InsertServer = {
+            name: typedParams.name || `${smitheryPkg.name} MCP Server`,
             type: 'smithery',
             address: 'localhost',
-            port: parameters.port || 50050 + Math.floor(Math.random() * 100), // Random port to avoid conflicts
+            port: typedParams.port || 50050 + Math.floor(Math.random() * 100), // Random port to avoid conflicts
             status: 'inactive',
             models: ['Claude-3-Opus', 'Claude-3-Sonnet', 'Claude-3-Haiku', 'GPT-4'],
             smitheryPackage: smitheryPkg.package,
-            apiKey: parameters.apiKey,
-            commandConfig: parameters.config || smitheryPkg.config,
+            apiKey: typedParams.apiKey || undefined,
+            commandConfig: typedParams.config || smitheryPkg.config,
             description: smitheryPkg.description,
             isWorker: false
           };
