@@ -62,35 +62,66 @@ const SMITHERY_PACKAGES: SmitheryPackage[] = [
     id: 'server-sequential-thinking',
     name: 'Sequential Thinking',
     description: 'A Smithery MCP server for sequential reasoning',
-    package: '@smithery/server-sequential-thinking',
+    package: '@smithery-ai/server-sequential-thinking',
     apiKeyRequired: true,
     config: {
-      model: "claude-3-opus-20240229",
-      max_tokens: 4000,
-      system_prompt: "You are a helpful AI assistant that uses sequential thinking to solve problems."
+      mcpServers: {
+        "server-sequential-thinking": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@smithery/cli@latest",
+            "run",
+            "@smithery-ai/server-sequential-thinking",
+            "--key",
+            "11571649-6b8b-491d-afb7-2ef6044be574"
+          ]
+        }
+      }
     }
   },
   {
     id: 'desktop-commander',
     name: 'Desktop Commander',
     description: 'A Smithery MCP server for desktop automation',
-    package: '@smithery/desktop-commander',
+    package: '@wonderwhy-er/desktop-commander',
     apiKeyRequired: true,
     config: {
-      model: "claude-3-sonnet-20240229",
-      max_tokens: 2000
+      mcpServers: {
+        "desktop-commander": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@smithery/cli@latest",
+            "run",
+            "@wonderwhy-er/desktop-commander",
+            "--key",
+            "11571649-6b8b-491d-afb7-2ef6044be574"
+          ]
+        }
+      }
     }
   },
   {
     id: 'think-mcp-server',
     name: 'Think MCP Server',
     description: 'A minimal MCP server for autonomous agents',
-    package: '@smithery/think-mcp-server',
+    package: '@PhillipRt/think-mcp-server',
     apiKeyRequired: true,
     config: {
-      model: "claude-3-haiku-20240307",
-      max_tokens: 1000,
-      temperature: 0
+      mcpServers: {
+        "think-mcp-server": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@smithery/cli@latest",
+            "run",
+            "@PhillipRt/think-mcp-server",
+            "--key",
+            "11571649-6b8b-491d-afb7-2ef6044be574"
+          ]
+        }
+      }
     }
   }
 ];
