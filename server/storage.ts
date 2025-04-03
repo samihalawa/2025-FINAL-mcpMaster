@@ -6,6 +6,8 @@ import {
   activities, type Activity, type InsertActivity
 } from "@shared/schema";
 import { config } from './config';
+import path from 'path';
+import fs from 'fs/promises';
 
 export interface IStorage {
   // User methods
@@ -16,6 +18,8 @@ export interface IStorage {
   // Server methods
   getServer(id: number): Promise<Server | undefined>;
   getServers(): Promise<Server[]>;
+  getServerByPort(port: number): Promise<Server | undefined>;
+  getServerByAddress(address: string, port: number): Promise<Server | undefined>;
   createServer(server: InsertServer): Promise<Server>;
   updateServer(id: number, server: Partial<InsertServer>): Promise<Server | undefined>;
   deleteServer(id: number): Promise<boolean>;
@@ -24,6 +28,7 @@ export interface IStorage {
   getTool(id: number): Promise<Tool | undefined>;
   getTools(): Promise<Tool[]>;
   getToolsByServerId(serverId: number): Promise<Tool[]>;
+  getToolByName(name: string, serverId: number): Promise<Tool | undefined>;
   createTool(tool: InsertTool): Promise<Tool>;
   updateTool(id: number, tool: Partial<InsertTool>): Promise<Tool | undefined>;
   deleteTool(id: number): Promise<boolean>;
@@ -80,15 +85,15 @@ export class MemStorage implements IStorage {
       name: "MCP Manager",
       type: "local",
       address: "0.0.0.0",
-      port: 50050, // Default MCP port from range
+      port: config.MCP_PORT_RANGE_START, // Use configured port range
       status: "active",
       cpuUsage: 0,
       memoryUsage: 0,
-      totalMemory: 8, // Default memory allocation in GB
+      totalMemory: config.MCP_SERVER_DEFAULT_MEMORY || 8, // Use configured memory
       models: ["Claude-3-Opus", "Claude-3-Sonnet", "Claude-3-Haiku", "GPT-4"],
       createdAt: new Date(),
       lastActive: new Date(),
-      isWorker: true,
+      isWorker: true, // Mark as worker to enable communication
       // Additional fields required by schema
       repository: null,
       version: null,
@@ -180,6 +185,18 @@ export class MemStorage implements IStorage {
     return Array.from(this.servers.values());
   }
   
+  async getServerByPort(port: number): Promise<Server | undefined> {
+    return Array.from(this.servers.values()).find(
+      (server) => server.port === port
+    );
+  }
+  
+  async getServerByAddress(address: string, port: number): Promise<Server | undefined> {
+    return Array.from(this.servers.values()).find(
+      (server) => server.address === address && server.port === port
+    );
+  }
+  
   async createServer(insertServer: InsertServer): Promise<Server> {
     const id = this.serverIdCounter++;
     const server: Server = { 
@@ -190,7 +207,7 @@ export class MemStorage implements IStorage {
       memoryUsage: insertServer.memoryUsage ?? 0,
       totalMemory: insertServer.totalMemory ?? 8,
       models: insertServer.models || [],
-      isWorker: insertServer.isWorker ?? false,
+      isWorker: insertServer.isWorker ?? true, // Default to worker mode
       createdAt: new Date(), 
       lastActive: new Date(),
       // Ensure all fields required by the schema are present
@@ -270,6 +287,12 @@ export class MemStorage implements IStorage {
   
   async getToolsByServerId(serverId: number): Promise<Tool[]> {
     return Array.from(this.tools.values()).filter(tool => tool.serverId === serverId);
+  }
+  
+  async getToolByName(name: string, serverId: number): Promise<Tool | undefined> {
+    return Array.from(this.tools.values()).find(
+      (tool) => tool.name === name && tool.serverId === serverId
+    );
   }
   
   async createTool(insertTool: InsertTool): Promise<Tool> {
@@ -466,3 +489,161 @@ export class MemStorage implements IStorage {
 }
 
 export const storage = new MemStorage();
+
+// File paths for persistent storage
+const DATA_DIR = path.resolve('./data');
+const SERVERS_FILE = path.join(DATA_DIR, 'servers.json');
+const ACTIVITIES_FILE = path.join(DATA_DIR, 'activities.json');
+
+// Initialize storage
+async function initialize() {
+  // Check if we're using memory storage (default to true if not defined)
+  const useMemoryStorage = config.USE_MEMORY_STORAGE !== 'false';
+  
+  if (!useMemoryStorage) {
+    try {
+      // Create data directory if it doesn't exist
+      await fs.mkdir(DATA_DIR, { recursive: true });
+      
+      // Load servers from file if exists
+      try {
+        const serversData = await fs.readFile(SERVERS_FILE, 'utf-8');
+        const loadedServers = JSON.parse(serversData) as Server[];
+        servers = loadedServers;
+        
+        // Find the max ID to set nextServerId
+        nextServerId = Math.max(...servers.map(server => server.id), 0) + 1;
+        console.log(`Loaded ${servers.length} servers from storage`);
+      } catch (err) {
+        // File doesn't exist or is invalid, use empty array
+        console.log('No existing servers data found, starting with empty set');
+        servers = [];
+      }
+      
+      // Load activities from file if exists
+      try {
+        const activitiesData = await fs.readFile(ACTIVITIES_FILE, 'utf-8');
+        const loadedActivities = JSON.parse(activitiesData) as Activity[];
+        activities = loadedActivities;
+        
+        // Find the max ID to set nextActivityId
+        nextActivityId = Math.max(...activities.map(activity => activity.id), 0) + 1;
+        console.log(`Loaded ${activities.length} activities from storage`);
+      } catch (err) {
+        // File doesn't exist or is invalid, use empty array
+        console.log('No existing activities data found, starting with empty set');
+        activities = [];
+      }
+    } catch (error) {
+      console.error('Error initializing storage:', error);
+      // Fall back to memory storage
+      console.log('Falling back to memory storage');
+      servers = [];
+      activities = [];
+    }
+  } else {
+    console.log('Using in-memory storage');
+  }
+}
+
+// Save data to files
+async function saveToFiles() {
+  // Check if we're using memory storage (default to true if not defined)
+  const useMemoryStorage = config.USE_MEMORY_STORAGE !== 'false';
+  
+  if (!useMemoryStorage) {
+    try {
+      await fs.writeFile(SERVERS_FILE, JSON.stringify(servers, null, 2));
+      await fs.writeFile(ACTIVITIES_FILE, JSON.stringify(activities, null, 2));
+    } catch (error) {
+      console.error('Error saving data to files:', error);
+    }
+  }
+}
+
+// Server operations
+async function getServers(): Promise<Server[]> {
+  return [...servers];
+}
+
+async function getServer(id: number): Promise<Server | undefined> {
+  return servers.find(server => server.id === id);
+}
+
+async function createServer(data: InsertServer): Promise<Server> {
+  const newServer: Server = {
+    ...data,
+    id: nextServerId++
+  };
+  
+  servers.push(newServer);
+  await saveToFiles();
+  return newServer;
+}
+
+async function updateServer(id: number, data: Partial<Server>): Promise<Server | undefined> {
+  const index = servers.findIndex(server => server.id === id);
+  
+  if (index === -1) {
+    return undefined;
+  }
+  
+  servers[index] = {
+    ...servers[index],
+    ...data
+  };
+  
+  await saveToFiles();
+  return servers[index];
+}
+
+async function deleteServer(id: number): Promise<boolean> {
+  const initialLength = servers.length;
+  servers = servers.filter(server => server.id !== id);
+  
+  const deleted = initialLength > servers.length;
+  if (deleted) {
+    await saveToFiles();
+  }
+  
+  return deleted;
+}
+
+// Activity operations
+async function getActivities(limit: number = 100, serverId?: number): Promise<Activity[]> {
+  let result = [...activities];
+  
+  if (serverId !== undefined) {
+    result = result.filter(activity => activity.serverId === serverId);
+  }
+  
+  // Sort by timestamp (most recent first)
+  result.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  
+  // Apply limit
+  return result.slice(0, limit);
+}
+
+async function createActivity(data: InsertActivity): Promise<Activity> {
+  const newActivity: Activity = {
+    ...data,
+    id: nextActivityId++,
+    timestamp: new Date().toISOString()
+  };
+  
+  activities.push(newActivity);
+  await saveToFiles();
+  return newActivity;
+}
+
+// Export storage interface
+export const storage = {
+  initialize,
+  getServers,
+  getServer,
+  createServer,
+  updateServer,
+  deleteServer,
+  getActivities,
+  createActivity
+};
