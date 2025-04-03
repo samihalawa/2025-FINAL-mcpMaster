@@ -8,6 +8,13 @@
 
 import { JsonRpcRequest, JsonRpcResponse, Server, Tool, Stats } from './types';
 
+// Default configuration for the client
+const DEFAULT_CONFIG = {
+  WS_PATH: '/ws',
+  RETRY_ATTEMPTS: 3,
+  RETRY_DELAY: 1000,
+};
+
 /**
  * JSON-RPC client for making requests to the MCP server
  */
@@ -21,15 +28,24 @@ export class JsonRpcClient {
   }> = new Map();
   private connectionPromise: Promise<WebSocket> | null = null;
   private isConnecting: boolean = false;
+  private config: typeof DEFAULT_CONFIG;
 
   /**
    * Create a new JSON-RPC client
    * @param wsUrl The WebSocket URL to connect to
+   * @param config Optional client configuration
    */
-  constructor(wsUrl?: string) {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    this.url = wsUrl || `${protocol}//${host}/ws`;
+  constructor(wsUrl?: string, config: Partial<typeof DEFAULT_CONFIG> = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+    
+    // Use provided WebSocket URL or construct from current location
+    if (wsUrl) {
+      this.url = wsUrl;
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      this.url = `${protocol}//${host}${this.config.WS_PATH}`;
+    }
   }
 
   /**
@@ -106,6 +122,22 @@ export class JsonRpcClient {
       this.ws.close();
       this.ws = null;
       this.connectionPromise = null;
+    }
+  }
+
+  /**
+   * Update the WebSocket URL
+   * @param wsUrl The new WebSocket URL
+   */
+  public setUrl(wsUrl: string): void {
+    if (this.url !== wsUrl) {
+      this.url = wsUrl;
+      
+      // Reconnect if already connected
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.disconnect();
+        this.connect().catch(err => console.error('Failed to reconnect with new URL:', err));
+      }
     }
   }
 
@@ -214,6 +246,6 @@ export class JsonRpcClient {
 export const jsonRpcClient = new JsonRpcClient();
 
 // Export a function to create a new client with a custom URL
-export function createJsonRpcClient(wsUrl: string): JsonRpcClient {
-  return new JsonRpcClient(wsUrl);
+export function createJsonRpcClient(wsUrl: string, config?: Partial<typeof DEFAULT_CONFIG>): JsonRpcClient {
+  return new JsonRpcClient(wsUrl, config);
 }

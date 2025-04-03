@@ -11,6 +11,8 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { z } from "zod";
 import fetch from "node-fetch";
+import { config } from "./config";
+import { getSmitheryPackages, type SmitheryPackage } from "./smithery-packages";
 
 // Import WebSocket from ws (needed to access OPEN status)
 import { WebSocket as WSType } from "ws";
@@ -22,8 +24,8 @@ const KNOWN_REPOS = [
   // Add more repositories here as they become available
 ];
 
-// GitHub API URL
-const GITHUB_API_URL = 'https://api.github.com';
+// GitHub API URL from configuration
+const GITHUB_API_URL = config.GITHUB_API_URL;
 
 /**
  * Interface for GitHub repository data
@@ -50,84 +52,8 @@ interface GitHubRepo {
   updated_at: string;
 }
 
-// Smithery MCP server packages
-interface SmitheryPackage {
-  id: string;
-  name: string;
-  description: string;
-  package: string;
-  apiKeyRequired: boolean;
-  config: Record<string, any>;
-}
-
-const SMITHERY_PACKAGES: SmitheryPackage[] = [
-  { 
-    id: 'server-sequential-thinking',
-    name: 'Sequential Thinking',
-    description: 'A Smithery MCP server for sequential reasoning',
-    package: '@smithery-ai/server-sequential-thinking',
-    apiKeyRequired: true,
-    config: {
-      mcpServers: {
-        "server-sequential-thinking": {
-          "command": "npx",
-          "args": [
-            "-y",
-            "@smithery/cli@latest",
-            "run",
-            "@smithery-ai/server-sequential-thinking",
-            "--key",
-            process.env.SMITHERY_API_KEY || "YOUR_SMITHERY_API_KEY"
-          ]
-        }
-      }
-    }
-  },
-  {
-    id: 'desktop-commander',
-    name: 'Desktop Commander',
-    description: 'A Smithery MCP server for desktop automation',
-    package: '@wonderwhy-er/desktop-commander',
-    apiKeyRequired: true,
-    config: {
-      mcpServers: {
-        "desktop-commander": {
-          "command": "npx",
-          "args": [
-            "-y",
-            "@smithery/cli@latest",
-            "run",
-            "@wonderwhy-er/desktop-commander",
-            "--key",
-            process.env.SMITHERY_API_KEY || "YOUR_SMITHERY_API_KEY"
-          ]
-        }
-      }
-    }
-  },
-  {
-    id: 'think-mcp-server',
-    name: 'Think MCP Server',
-    description: 'A minimal MCP server for autonomous agents',
-    package: '@PhillipRt/think-mcp-server',
-    apiKeyRequired: true,
-    config: {
-      mcpServers: {
-        "think-mcp-server": {
-          "command": "npx",
-          "args": [
-            "-y",
-            "@smithery/cli@latest",
-            "run",
-            "@PhillipRt/think-mcp-server",
-            "--key",
-            process.env.SMITHERY_API_KEY || "YOUR_SMITHERY_API_KEY"
-          ]
-        }
-      }
-    }
-  }
-];
+// Get Smithery packages from the separate file
+const SMITHERY_PACKAGES = getSmitheryPackages();
 
 // Registry data structure to handle MCP tool registry
 interface RegistryTool {

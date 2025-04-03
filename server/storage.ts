@@ -5,6 +5,7 @@ import {
   apps, type App, type InsertApp,
   activities, type Activity, type InsertActivity
 } from "@shared/schema";
+import { config } from './config';
 
 export interface IStorage {
   // User methods
@@ -68,22 +69,22 @@ export class MemStorage implements IStorage {
     this.appIdCounter = 1;
     this.activityIdCounter = 1;
 
-    // Initialize with sample data
+    // Always initialize sample data for memory storage
     this.initializeSampleData();
   }
 
   private initializeSampleData() {
-    // Create a single MCP Manager server
+    // Create a single MCP Manager server using configuration values
     const mcpManager: Server = {
       id: this.serverIdCounter++,
       name: "MCP Manager",
       type: "local",
-      address: "localhost",
-      port: 50050,
+      address: "0.0.0.0",
+      port: 50050, // Default MCP port from range
       status: "active",
       cpuUsage: 0,
       memoryUsage: 0,
-      totalMemory: 8,
+      totalMemory: 8, // Default memory allocation in GB
       models: ["Claude-3-Opus", "Claude-3-Sonnet", "Claude-3-Haiku", "GPT-4"],
       createdAt: new Date(),
       lastActive: new Date(),
@@ -142,7 +143,7 @@ export class MemStorage implements IStorage {
     const initActivity = {
       id: this.activityIdCounter++,
       type: "success",
-      message: "MCP Manager initialized",
+      message: `MCP Manager initialized`,
       serverId: mcpManager.id,
       appId: null,
       toolId: null,

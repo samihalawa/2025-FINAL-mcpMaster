@@ -3,7 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { useEffect } from "react";
-import { jsonRpcClient } from "./lib/jsonrpc";
+import { jsonRpcClient, createJsonRpcClient } from "./lib/jsonrpc";
 import NotFound from "@/pages/not-found";
 import Layout from "@/components/layout/layout";
 import Dashboard from "@/pages/dashboard";
@@ -36,15 +36,20 @@ function App() {
     const apiKey = params.get('api_key');
     const headless = params.get('headless');
     const autoConnect = params.get('auto_connect');
-    const wsUrl = params.get('ws_url') || undefined;
+    const wsUrl = params.get('ws_url');
     
     if (apiKey || headless === 'true' || autoConnect === 'true') {
       console.log('API-first/headless mode detected via URL parameters');
       
+      // Update WebSocket URL if provided
+      if (wsUrl) {
+        jsonRpcClient.setUrl(wsUrl);
+      }
+      
       // Handle auto-connection for JSON-RPC if requested
       if (autoConnect === 'true') {
         try {
-          // Connect using the provided WebSocket URL if available, or use default
+          // Connect using the configured WebSocket URL
           jsonRpcClient.connect().then(() => {
             console.log('Auto-connected to MCP server via JSON-RPC');
             
