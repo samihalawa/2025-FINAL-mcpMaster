@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/samihalawa-2025-final-mcpmaster-badge.png)](https://mseep.ai/app/samihalawa-2025-final-mcpmaster)
+
 # MCP Manager
 
 A flexible Model Context Protocol (MCP) manager server that enables communication between AI models and tools. Compatible with Claude, MCP Dockmaster, and other MCP clients.
