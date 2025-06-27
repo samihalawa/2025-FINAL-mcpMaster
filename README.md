@@ -1,147 +1,64 @@
-# MCP Manager
+# 🚀 MCP Master 2025 - Complete Model Context Protocol Management Suite
 
-A flexible Model Context Protocol (MCP) manager server that enables communication between AI models and tools. Compatible with Claude, MCP Dockmaster, and other MCP clients.
+**The ultimate Model Context Protocol (MCP) server collection and management platform for AI assistants, Claude Desktop, and automation workflows.**
 
-## Features
+## 🎯 What is MCP Master?
 
-- **MCP Server Management**: Run multiple MCP servers and manage them from a single interface
-- **Worker Mode**: Operate as a worker for other MCP clients
-- **Auto-Discovery**: Automatically find MCP servers on GitHub and from Smithery packages
-- **Tool Registry**: Browse and install tools from a registry of MCP tools
-- **WebSocket Communication**: JSON-RPC over WebSockets for real-time communication
-- **Headless Mode**: Run in headless mode for API-first operation
+MCP Master is a comprehensive collection of production-ready Model Context Protocol servers designed to extend AI capabilities across multiple domains. This repository serves as a central hub for managing, deploying, and utilizing various MCP servers for enhanced AI automation.
 
-## Getting Started
+## ⭐ Key Features
 
-### Prerequisites
+- **🔧 Complete MCP Server Collection** - Pre-configured servers for various use cases
+- **📊 Centralized Management** - Single dashboard for all MCP operations  
+- **🚀 Easy Deployment** - One-click setup for Claude Desktop and other MCP clients
+- **🔒 Security First** - Built-in authentication and secure configuration management
+- **📈 Scalable Architecture** - Supports enterprise-level deployments
+- **🛠️ Developer Tools** - Comprehensive debugging and monitoring capabilities
 
-- Node.js (v18+)
-- NPM (v8+)
+## 🎨 Supported MCP Servers
 
-### Installation
+- **Web Automation** - Browser control and web scraping
+- **Email Management** - SMTP, IMAP, and email automation
+- **File Operations** - Advanced file system management
+- **API Integration** - REST API clients and webhooks
+- **Database Connectivity** - SQL and NoSQL database operations
+- **AI Model Access** - Multiple AI provider integrations
+
+## 🚀 Quick Start
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
-cd <your-repo-directory>
+git clone https://github.com/samihalawa/2025-FINAL-mcpMaster.git
 
 # Install dependencies
 npm install
 
-# Create a .env file from the example
-cp .env.example .env
+# Configure your MCP servers
+npm run configure
 
-# Edit .env to configure your MCP Manager
-nano .env
+# Start the MCP Master dashboard
+npm start
 ```
 
-### Running the Server
+## 📖 Documentation
 
-```bash
-# Run in development mode
-npm run dev
+- [Installation Guide](docs/installation.md)
+- [Configuration Reference](docs/configuration.md)
+- [API Documentation](docs/api.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
-# Build and run in production mode
-npm run build
-npm run start
-```
+## 🏷️ Tags
 
-## Configuration Options
+`mcp` `model-context-protocol` `ai-automation` `claude-desktop` `ai-assistant` `automation` `api-integration` `web-scraping` `email-automation` `file-management` `database` `ai-tools` `productivity` `workflow-automation` `enterprise-ai`
 
-Configure your MCP Manager by editing the `.env` file:
+## 📄 License
 
-```
-# Server Configuration
-PORT=5000                  # Main server port
-HOST=0.0.0.0               # Host to bind to
-NODE_ENV=development       # Environment (development/production)
-REUSE_PORT=true            # Whether to reuse the port
+MIT License - see [LICENSE](LICENSE) file for details.
 
-# MCP Port Range
-MCP_PORT_RANGE_START=50050 # Start port for MCP servers
-MCP_PORT_RANGE_END=50150   # End port for MCP servers
+## 🤝 Contributing
 
-# MCP Compatibility Settings
-MCP_WORKER_MODE=false      # Enable worker mode
-MCP_DISCOVERY_ENABLED=true # Enable auto-discovery of MCP servers
-MCP_AUTOSTART_SERVERS=true # Automatically start MCP servers
+Contributions welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
 
-# Smithery API Configuration
-SMITHERY_API_KEY=your_smithery_api_key_here # API key for Smithery packages
-```
+---
 
-## Using MCP Manager with Claude and Other MCP Clients
-
-MCP Manager is designed to be compatible with various MCP clients, including:
-
-- [Claude Desktop](https://claude.ai/desktop)
-- [MCP Dockmaster](https://github.com/dcSpark/mcp-dockmaster)
-- [Toolbase](https://github.com/Toolbase-AI/toolbase)
-- Other MCP compatible clients
-
-### Connecting to Claude Desktop
-
-1. Run MCP Manager on your local machine
-2. Open Claude Desktop
-3. Go to Settings > Advanced > MCP Configuration
-4. Set the MCP Server URL to `http://localhost:5000/ws`
-5. MCP Manager will appear as an available server in Claude
-
-### Connecting to MCP Dockmaster
-
-1. Run MCP Manager on your local machine
-2. Open MCP Dockmaster
-3. Click "Add Server"
-4. Enter the server information:
-   - Name: MCP Manager
-   - Address: localhost
-   - Port: 5000
-5. Click "Connect"
-
-## Using Worker Mode
-
-MCP Manager can operate as a worker for other MCP clients:
-
-1. Set `MCP_WORKER_MODE=true` in your `.env` file
-2. Run MCP Manager
-3. Connect to MCP Manager from your MCP client
-4. MCP Manager will automatically discover and register available tools
-
-## Headless/API-First Operation
-
-MCP Manager supports headless operation for API-first clients:
-
-```
-GET /?api_key=YOUR_API_KEY&headless=true&auto_connect=true
-```
-
-Query parameters:
-- `api_key`: Your API key (if required)
-- `headless`: Enable headless mode
-- `auto_connect`: Automatically connect to available MCP servers
-- `ws_url`: Specify a custom WebSocket URL
-- `server_id`: Connect to a specific server ID
-
-## API Reference
-
-MCP Manager implements the JSON-RPC protocol over WebSockets. The main API endpoint is:
-
-```
-ws://localhost:5000/ws
-```
-
-### Available Methods
-
-- `ping`: Test server connectivity
-- `getServers`: Get all registered servers
-- `getServer`: Get server by ID
-- `toggleWorker`: Toggle worker status for a server
-- `getTools`: Get all tools
-- `getToolsByServer`: Get tools for a specific server
-- `activateTool`: Activate a tool
-- `deactivateTool`: Deactivate a tool
-- `getStats`: Get server statistics
-
-## License
-
-MIT 
+**Made with ❤️ for the AI automation community**
